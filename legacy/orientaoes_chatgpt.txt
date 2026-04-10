@@ -1,0 +1,448 @@
+Olhando o que você tem hoje, eu não jogaria fora. A base está útil e já entrega valor.
+Mas eu faria uma evolução de estrutura, porque hoje o projeto ainda está com cara de script que cresceu, não de ferramenta.
+
+Minha leitura direta do estado atual
+O que está bom
+já funciona
+gera TXT e XLSX
+a lógica principal está clara
+o script do Cost Explorer já é o caminho certo
+você já tem histórico de relatórios gerados
+O que está fraco
+muito hardcoded
+lógica, configuração e saída estão misturadas
+o nome da coluna Service está sendo usado como data no CSV pivotado, o que é confuso
+há duplicação entre gera-relatorio.py e gera-relatorio-cost-explorer.py
+o repositório tem .venv dentro, e eu não manteria isso versionado
+não existe uma camada clara para:
+coleta
+cálculo
+renderização
+futura análise com Bedrock
+
+Então, sendo bem sincero:
+eu manteria a lógica de negócio, mas reorganizaria o projeto.
+
+O que eu faria
+1. Pararia de tratar isso como “dois scripts”
+
+Hoje você tem:
+
+gera-relatorio.py
+gera-relatorio-cost-explorer.py
+
+Eu transformaria isso em um projeto com entrada única.
+
+Exemplo:
+
+src/
+  main.py
+  config.py
+  collectors/
+  analyzers/
+  renderers/
+  integrations/
+
+E o main.py decidiria:
+
+se a fonte é CSV
+se a fonte é Cost Explorer
+se vai chamar Bedrock
+se vai gerar TXT/XLSX
+2. Criaria config.py imediatamente
+
+Sim, aqui faz total sentido.
+
+Hoje está hardcoded:
+
+profile
+região
+janela de dias
+diretório de saída
+thresholds
+filtros do Cost Explorer
+serviço especial (AWS End User Messaging)
+
+Tudo isso deveria sair do script.
+
+Eu colocaria no config.py:
+AWS_PROFILE
+AWS_REGION
+LOOKBACK_DAYS
+OFFSET_DAYS
+EXCLUDED_RECORD_TYPES
+MIN_DAILY_COST_USD
+MIN_PERCENT_VARIATION
+MIN_ABSOLUTE_VARIATION_USD
+TOP_N_SERVICES
+OUTPUT_DIR_REPORT
+OUTPUT_DIR_COST_EXPLORER
+ENABLE_BEDROCK
+BEDROCK_MODEL_ID
+SPECIAL_SERVICES = ["AWS End User Messaging"]
+3. Separaria por responsabilidade
+
+Hoje o script faz tudo:
+
+chama API
+trata dataframe
+calcula
+formata saída
+escreve Excel
+escreve TXT
+
+Funciona, mas cresce mal.
+
+Eu quebraria assim:
+collectors/cost_explorer.py
+
+Só coleta da AWS.
+
+collectors/csv_input.py
+
+Só lê CSV local.
+
+analyzers/cost_analysis.py
+
+Calcula:
+
+média
+último dia
+variação
+top custos
+aumentos
+reduções
+renderers/txt_report.py
+
+Gera TXT.
+
+renderers/excel_report.py
+
+Gera XLSX.
+
+integrations/bedrock.py
+
+Fica reservado para a próxima fase.
+
+4. Corrigiria a modelagem dos dados
+
+Esse ponto aqui é importante.
+
+No gera-relatorio.py, você usa:
+
+coluna Service como se fosse data
+
+Isso é feio e perigoso. Funciona porque o CSV está assim, mas semântica ruim costuma cobrar a conta depois.
+
+Eu renomearia internamente para algo coerente:
+
+Date
+TotalCost
+Service
+
+Mesmo que o CSV venha estranho, normaliza logo na entrada.
+
+5. Criaria funções reutilizáveis
+
+Hoje muita coisa está no corpo do script.
+
+Eu transformaria em funções como:
+
+get_analysis_period()
+fetch_costs_from_cost_explorer()
+build_daily_pivot()
+calculate_variations()
+get_top_services()
+build_sms_last_7_days()
+write_txt_report()
+write_excel_report()
+
+Isso já deixa o projeto com outra cara.
+
+6. Eu eliminaria duplicação
+
+Hoje os dois scripts repetem muita lógica de:
+
+cálculo
+ordenação
+geração de relatório
+
+Isso deveria existir uma vez só.
+
+A diferença entre CSV e API deveria estar só na fonte dos dados, não no restante.
+
+7. Eu limparia o repositório
+
+Algumas coisas eu não deixaria no projeto:
+
+Tiraria do versionamento
+.venv
+arquivos de saída antigos
+relatórios gerados
+CSVs de execução
+talvez xlsx/txt históricos
+
+Essas coisas podem existir localmente, mas eu não manteria isso no repositório principal.
+
+.gitignore
+
+Eu garantiria pelo menos:
+
+.venv/
+__pycache__/
+*.pyc
+relatorios/
+relatorios_costexplorer/
+csv/
+
+Se quiser manter exemplos, deixaria:
+
+csv/exemplo.csv
+ou samples/
+8. Eu manteria compatibilidade com o que você já usa
+
+Aqui eu não inventaria moda.
+
+Você já usa:
+
+pandas
+openpyxl
+boto3
+
+Está bom.
+Eu não sairia trocando por biblioteca nova só por trocar.
+
+Estrutura que eu faria
+
+Eu deixaria assim:
+
+relatorio-custo-aws/
+├── README.md
+├── requirements.txt
+├── .gitignore
+├── src/
+│   ├── main.py
+│   ├── config.py
+│   ├── utils.py
+│   ├── collectors/
+│   │   ├── cost_explorer.py
+│   │   └── csv_input.py
+│   ├── analyzers/
+│   │   └── cost_analysis.py
+│   ├── renderers/
+│   │   ├── txt_report.py
+│   │   └── excel_report.py
+│   └── integrations/
+│       └── bedrock.py
+├── output/
+├── samples/
+└── prompts/
+    └── finops_analysis.txt
+Como eu evoluiria sem quebrar o que já funciona
+Fase 1
+
+Só reorganizar:
+
+criar config.py
+mover lógica para funções
+centralizar geração de relatório
+Fase 2
+
+Adicionar Bedrock:
+
+montar payload
+chamar modelo
+salvar análise em TXT/JSON
+Fase 3
+
+Adicionar enriquecimento:
+
+S3
+CloudWatch Logs
+SQS
+Lambda
+Step Functions
+etc.
+
+Ou seja: primeiro arruma a casa, depois põe móvel novo.
+
+Minha opinião sobre cada arquivo atual
+gera-relatorio.py
+
+Eu manteria só como legado ou fallback.
+No longo prazo, ele viraria apenas um modo de entrada, não um script principal.
+
+gera-relatorio-cost-explorer.py
+
+Esse hoje é o coração útil do projeto.
+Eu aproveitaria quase toda a lógica, mas quebraria em funções e módulos.
+
+README.md
+
+Está útil, mas eu simplificaria e atualizaria depois da reorganização.
+Hoje ainda está muito centrado em “rodar script X ou Y”.
+
+requirements.txt
+
+Está ok.
+Não mexeria agora, além de eventualmente remover dependência que não estiver sendo usada.
+
+Se fosse meu, eu faria assim
+
+Eu começaria amanhã com estas mudanças:
+
+criar src/config.py
+mover datas, profile, região e filtros para config
+criar src/analyzers/cost_analysis.py
+mover a lógica de cálculo para funções
+criar src/renderers/txt_report.py
+criar src/renderers/excel_report.py
+deixar main.py como ponto de entrada
+manter o Bedrock para a próxima etapa
+
+Isso já deixa o projeto com base boa sem sair reconstruindo o mundo.
+
+Veredito
+
+Seu projeto está bom como prova de valor.
+Mas, do jeito que está, eu trataria como versão 0.5.
+
+Para virar uma automação séria com Bedrock, eu faria:
+
+modularização
+config.py
+menos hardcode
+uma entrada única
+separação clara entre coleta, análise e saída
+
+Esse é o caminho.
+
+Se você quiser, eu posso dar o próximo passo e te devolver uma proposta concreta de reorganização dos arquivos, já com nomes de funções e um config.py inicial.
+
+-----------------------------
+Contextoq ue passei apra o chatgpt chegar a esta orientação
+
+Contexto:
+Ambiente na aws com Ping identity Access Federate e PDP rodando em EKS.
+Ping identity Directory rodando em instancias EC2
+APIs de cadastro reset motor de regras disparo de sms rodando em EKS.
+Nossa plataforma as vezes tem picos de consumo, principalmente em envendo de midia como futegol ou acontecimentos de alta audiencis, por servir uma plataforma de streaming
+Temos dados para gerar metricas de negocio, então fazemosa processos de transformação de dadod para gerar metrica de negocio
+
+
+Seu relatório diário de custos
+
+Cost Explorer por UsageType, com estes filtros:
+só itens com custo diário relevante, como você propôs
+sem taxas, créditos e reembolsos
+
+idealmente já com serviço + usage type + valor do dia + média 7d + delta
+
+Contexto operacional curto
+	deploy
+	teste de carga
+	campanha
+	mudança de retenção/log
+	criação de tabela/job/pipeline
+	
+-S3
+
+	Faz sentido mandar:
+
+	BucketSizeBytes
+	NumberOfObjects
+	GetRequests
+	PutRequests
+	DeleteRequests
+	4xxErrors
+	5xxErrors
+
+Somente para:
+	buckets que aparecem nos drivers de custo do dia
+	top buckets por tamanho / request / erro
+Objetivo: distinguir custo por storage vs requests vs erro, identificar anomalia que gerarm custos em outros serviços como guardduty e backup.
+
+
+-End User Messaging
+Faz sentido mandar:
+
+	número de SMS enviados
+	taxa de entrega
+Objetivo: validar se o aumento de custo veio de aumento real no volume de SMS
+
+-CloudWatch Logs
+	IncomingBytes
+Objetivo: confirmar aumento por ingestão de logs, e se possivel a/as origens que esta fazendo o maior envio
+	
+	
+Lambda
+	Duration, 
+	Invocations
+	Errors
+	fazem sentido
+
+SQS
+	NumberOfMessagesSent
+	NumberOfMessagesReceived
+	filas estão ligadas ao fluxo de OTP/reset/confirmação
+Objetivo: correlacionar fila com anomalia de envio OTP/reset, pode ter relação com en user messaging
+
+Step Functions
+	ExecutionsStarted
+	ExecutionsFailed
+	ExecutionsAborted
+	ExecutionTime
+Objetivo: detectar loop, retry ou falha com custo anormal
+
+DynamoDB
+	ReadThrottleEvents
+	WriteThrottleEvents
+	ReturnedItemCount para Query e Scan
+	consumo de leitura
+	consumo de escrita
+Objetivo: Detectar uso anormal, detectar uso indevido de scan(pode não ser boa pratica)
+
+Firehose
+	DeliveryToS3.Records
+	se possível, volume em bytes também
+Objetivo: identificar uso anomalo
+
+Glue
+	JobRun ResourceUsage
+	resumido por job:
+		top jobs por custo presumido
+		duração
+		volume processado, se tiver
+Objetivo: identificar uso anomalo, falhas em transformações de dados, somente quando aparecer como uma anomalia	
+
+
+EC2 / EKS / rede
+	NetworkIn
+	NetworkOut
+	apenas para instâncias/nodes/recursos ligados aos drivers de custo do dia
+
+Objetivo:correlacionar aumento de tráfego com NAT Gateway, data transfer e scaling
+
+Mandar metricas somente de itens com custo igual ou maiors que 10 dolares ou variação percentual >= 30%.
+
+
+Sempre mandar para o bedrock
+
+contexto
+relatório diário
+cost explorer por usage type
+contexto operacional curto
+
+Mandar sob demanda / enriquecimento
+
+S3
+End User Messaging
+CloudWatch Logs
+Lambda
+SQS
+Step Functions
+DynamoDB
+Firehose
+Glue
+EC2/EKS/rede
+
