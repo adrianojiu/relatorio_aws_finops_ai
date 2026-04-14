@@ -113,6 +113,34 @@ def _infer_asg_context(group_name, tag_map):
     return derived_context, notes
 
 
+def _describe_instance_types_for_ids(ec2_client, instance_ids):
+    """
+    Resolve the instance types currently attached to an ASG from live EC2 instances.
+    """
+    if not instance_ids:
+        return []
+
+    observed_types = set()
+    for index in range(0, len(instance_ids), 100):
+        batch = instance_ids[index:index + 100]
+        response = ec2_client.describe_instances(InstanceIds=batch)
+        for reservation in response.get("Reservations", []):
+            for instance in reservation.get("Instances", []):
+                instance_type = instance.get("InstanceType")
+                if instance_type:
+                    observed_types.add(instance_type)
+
+    return sorted(observed_types)
+
+
+def _usage_type_matches_instance_types(usage_type, observed_instance_types):
+    """
+    Check whether the Cost Explorer usage type explicitly contains one of the ASG instance types.
+    """
+    usage_type_lower = (usage_type or "").lower()
+    return any(instance_type.lower() in usage_type_lower for instance_type in (observed_instance_types or []))
+
+
 def _infer_s3_context(bucket_name):
     bucket_name = (bucket_name or "").lower()
     bucket_context = config.KNOWN_S3_BUCKET_CONTEXT.get(bucket_name, {})
@@ -921,6 +949,7 @@ def _list_ec2_instances(session):
 
 def _list_relevant_autoscaling_groups(session):
     client = session.client("autoscaling")
+    ec2_client = session.client("ec2")
     paginator = client.get_paginator("describe_auto_scaling_groups")
     resources = []
 
@@ -931,6 +960,19 @@ def _list_relevant_autoscaling_groups(session):
             derived_context, notes = _infer_asg_context(group_name, tag_map)
             if "eks_cluster" not in derived_context:
                 continue
+
+            instance_ids = [
+                instance.get("InstanceId")
+                for instance in group.get("Instances", [])
+                if instance.get("InstanceId")
+            ]
+            observed_instance_types = _describe_instance_types_for_ids(ec2_client, instance_ids)
+            if observed_instance_types:
+                derived_context["observed_instance_types"] = observed_instance_types
+                notes.append(
+                    "Tipos de instancia observados no ASG durante a descoberta: "
+                    + ", ".join(observed_instance_types)
+                )
 
             resources.append(
                 {
@@ -982,6 +1024,13 @@ def _score_resource_with_context(resource_payload):
 
     derived_context = resource_payload.get("derived_context", {})
     resource_type = resource_payload.get("resource_type")
+    anomaly = resource_payload.get("anomaly_context", {})
+    workload_role = derived_context.get("autoscaling_role") or derived_context.get("eks_nodegroup_role")
+    observed_instance_types = derived_context.get("observed_instance_types", [])
+    usage_type_match = _usage_type_matches_instance_types(
+        anomaly.get("usage_type"),
+        observed_instance_types,
+    )
 
     is_eks_workload = (
         derived_context.get("eks_cluster") in {"prd-sso-ciam", "prd-sso-fachada"}
@@ -1005,6 +1054,22 @@ def _score_resource_with_context(resource_payload):
         cpu_metric = metrics_summary.get("CPUUtilization")
         if cpu_metric:
             score += abs(cpu_metric.get("delta_pct", 0.0)) * 0.3
+
+        # Match the ASG's observed instance type with the Cost Explorer usage type before
+        # treating it as a primary compute driver.
+        if usage_type_match:
+            score += 180
+        elif observed_instance_types and anomaly.get("usage_type"):
+            score -= 120
+
+        # PDP is the default primary compute suspect for Claro TV+ event-driven demand unless
+        # another nodegroup shows clearly stronger and better-aligned evidence.
+        if workload_role == "ping_pdp":
+            score += 120
+        elif workload_role in {"ping_access", "ping_federate"}:
+            score += 35
+        elif workload_role == "fachada_apis":
+            score -= 35
         return round(score, 2)
 
     score = _score_resource(metrics_summary)
@@ -1172,6 +1237,11 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             "resource_arn": candidate.get("resource_arn"),
             "tags": candidate.get("tags", {}),
             "derived_context": candidate.get("derived_context", {}),
+            "anomaly_context": {
+                "service": anomaly.get("service"),
+                "usage_type": anomaly.get("usage_type"),
+                "anchor_day": anomaly.get("anchor_day"),
+            },
             "anomaly_anchor_day": anomaly.get("anchor_day"),
             "confidence": candidate_confidence,
             "metrics": metrics_summary,
@@ -1222,6 +1292,11 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
                 "autoscaling_group_name": candidate.get("autoscaling_group_name"),
                 "tags": candidate.get("tags", {}),
                 "derived_context": candidate.get("derived_context", {}),
+                "anomaly_context": {
+                    "service": anomaly.get("service"),
+                    "usage_type": anomaly.get("usage_type"),
+                    "anchor_day": anomaly.get("anchor_day"),
+                },
                 "confidence": "medium" if metrics_summary else "low",
                 "metrics": metrics_summary,
                 "possible_impacted_services": rule.get("possible_impacted_services", []),
@@ -1231,7 +1306,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             candidate_payload["score"] = _score_resource_with_context(candidate_payload)
             autoscaling_enriched.append(candidate_payload)
 
-        autoscaling_enriched.sort(key=lambda item: item.get("resource_id") or "")
+        autoscaling_enriched.sort(key=lambda item: item.get("score", 0.0), reverse=True)
         top_resources.extend(autoscaling_enriched)
 
         ecr_enriched = []
@@ -1321,6 +1396,10 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
 
         backup_enriched.sort(key=lambda item: item.get("resource_id") or "")
         top_resources.extend(backup_enriched)
+
+        # Keep the best compute candidates first so the LLM sees the most plausible
+        # explanation before lower-signal or merely complementary evidence.
+        top_resources.sort(key=lambda item: item.get("score", 0.0), reverse=True)
 
     if not top_resources:
         return [

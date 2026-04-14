@@ -118,6 +118,7 @@ def _compact_resource_for_bedrock(resource):
         "resource_arn": resource.get("resource_arn"),
         "tags": resource.get("tags", {}),
         "derived_context": resource.get("derived_context", {}),
+        "observed_instance_types": resource.get("derived_context", {}).get("observed_instance_types", []),
         "confidence": resource.get("confidence"),
         "possible_impacted_services": resource.get("possible_impacted_services", []),
         "hypothesis": resource.get("hypothesis"),

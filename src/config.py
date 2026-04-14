@@ -366,14 +366,24 @@ KNOWN_LOAD_BALANCER_CONTEXT = {
 
 CONTEXT_OPERATIONAL_SUMMARY = """
 - Ambiente AWS de CIAM com Ping Identity em EKS e Ping Directory em EC2.
-- PDP oscila mais em dias de eventos de streaming; scaling costuma ser agendado e, em poucos casos, reativo.
+- PDP oscila mais em dias de eventos de streaming do Claro TV+; scaling costuma ser agendado e, em poucos casos, reativo.
 - Ping Federate e Ping Access tambem oscilam com eventos, mas normalmente menos que o PDP.
-- Eventos e pushes do Claro TV+ devem ser usados como contexto de negocio para plays, autenticacao, autorizacao e scaling agendado.
-- Calendario de push/eventos nao deve ser usado como evidencia direta de custo ou volume de AWS End User Messaging/SMS.
-- Ping Directory: primary, secondary e ternary atendem producao; quaternary fica fora do balanceamento e executa backup, relatorios e limpeza de base ldap.
-- SMS e transacional; AWS End User Messaging e via de fallback, nao campanha, RTDM e MSE são os principais, AWS End User Messaging só é usado se eles falham.
+- Eventos e pushes do Claro TV+ devem ser usados como contexto de negocio para plays, autenticacao, autorizacao e scaling agendado, nodegroup do EKS PDP tende fortemente(mas não completamente) a ser utilizado em eventos do Claro tv+.
+- Eventos de Pull acima do normal no ECR pode indicar que o cluster prd-sso-ciam esta sendo escalado para atender a demanda de eventos do Claro TV+ ou outro scaling.
+- Cluster EKS prd-sso-ciam é responsavel por hospedas o Ping Access, Ping Federate e PDP.
+- Calendario de push/eventos não deve ser usado como evidencia direta de custo ou volume de AWS End User Messaging/SMS.
+- Ping Directory: primary, secondary e ternary atendem producao; quaternary fica fora do balanceamento e executa backup para S3, relatorios e limpeza de base ldap rodando em scripts nesta instancia. 
+- Nat gateway Bytes costuma sofrer influencia de atividades de backup, mas não tem correlação direta com eventos do Claro TV+.
+- SMS e transacional; AWS End User Messaging é usado para fallback, não campanha, RTDM e MSE (ferramentas internas não estão na aws) são os principais para envios, AWS End User Messaging só é usado se eles falham.
 - Para CloudWatch Logs DataScanned-Bytes, priorize evidencias de queries executadas e metadados de consulta.
+- É comum execuç~eos manuais ou agendadas de queries no CloudWatch Logs para investigar eventos, estas consultas podem gerar custos significativos dependendo do volume de dados escaneados, mas são parte importante da operação e investigação.
 - No inicio do mes e na primeira semana podem ocorrer queries operacionais recorrentes no CloudWatch Logs para FinOps e reunioes de MBR.
+- Temos APIs de cadastro de clientes e reset de senhas e envio de SMS que rodam no EKS cluster prd-sso-fachada, clientes usam estas para Cadastro, Reset e por consequencia para envios de SMS, eventos do Claro TV+ não constumam ter relação com envio de SMS.
+- Sempre atento a filas SQS relacionadas a SMS e envios de mensagens do fachada, principalmente as internas de MSE e RTDM, mas também a fila de fallback do SNS; variações nestas filas podem indicar mudanças no volume transacional ou falhas nos canais primários.
+- Possuimos buckets S3 com diferentes papeis, incluindo logs brutos do Ping, dados transformados para metricas de negocio e backup/exportacao do Ping Directory; entender o papel de cada bucket é crucial para correlacionar custos e atividades.
+- Sempre fique atendo a atividades anomalas de buckets S3 existentes, time de dados costuma fazer queries de leitura em buckets de logs do Ping para gerar metricas e dashboards, mas atividades incomuns podem indicar problemas ou mudanças no comportamento do sistema.
+- Temos guardduty configurado para monitorar atividades suspeitas, mas é importante correlacionar alertas do GuardDuty com outros dados operacionais para entender o contexto completo.
+- Loadbalancers usados pelo cluster EKS prd-sso-ciam, tendem a ter alto consumo quando eventos do Claro TV+ acontecem, mas o load balancer interno de integracao com a Claro TV+ tem comportamento mais diretamente correlacionado com estes eventos.
 """.strip()
 
 

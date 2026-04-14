@@ -1,6 +1,6 @@
 # Contexto do Projeto
 se você é uma IA e esta lendo isso, estas são as definições de contexto deste projeto, são importantes para entender definições ja tabalhadas e decididas, este arquivo pode te ajuda a entender melhor o projeto, alem do codigo e readme.
-Este arquivo consolida o contexto operacional, as regras de implementacao e as decisoes praticas do projeto `local-relatorio-custo-aws-diario-prd-ciam`.
+Este arquivo consolida o contexto operacional, as regras de implementacao e as decisoes praticas do projeto `relatorio_aws_finops_ai`.
 
 O objetivo e evitar perda de contexto entre sessoes e facilitar manutencao futura.
 
@@ -78,6 +78,8 @@ Gerar um relatorio diario de custos AWS com:
 Saidas principais:
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.xlsx`
+- `output/YYYY-MM-DD/execucao_<timestamp>.log`
+- `output/YYYY-MM-DD/execucao_<timestamp>.json`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_bedrock_payload.json`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_bedrock_prompt.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_bedrock_context.txt`
@@ -163,6 +165,40 @@ Essa separacao deve ser mantida.
 
 Os artefatos de cada execucao devem ficar agrupados em uma subpasta por data dentro de `output/`, para evitar poluicao da raiz de saida.
 
+### Estilo esperado da resposta da IA
+
+A resposta da IA em `*_ai.txt` e `*_ai.pdf` deve ser executiva e objetiva.
+
+Preferencias atuais:
+- abrir com um resumo executivo curto
+- destacar apenas os drivers realmente relevantes do dia de referencia
+- limitar os principais drivers a poucos itens
+- limitar recomendacoes a acoes praticas e diretas
+- evitar recontar todo o payload, repetir series completas ou reescrever contexto ja evidente
+
+Se um detalhe tecnico nao mudar:
+- classificacao
+- causa provavel
+- confianca
+- ou proximo passo
+
+ele nao deve aparecer na resposta final da IA.
+
+## Observabilidade da Execucao
+
+A observabilidade da execucao deve registrar eventos em tempo real no console e tambem em arquivo dedicado dentro de `output/YYYY-MM-DD/`.
+
+Objetivos:
+- identificar em qual etapa a execucao falhou
+- identificar em qual etapa a execucao ficou lenta
+- manter rastreabilidade mesmo quando o TXT principal nao for gerado
+
+Arquivos esperados por execucao:
+- `execucao_<timestamp>.log` para acompanhamento em tempo real
+- `execucao_<timestamp>.json` para consolidacao estruturada do fluxo
+
+Quando o relatorio TXT final for gerado, o artefato `*_execution_log.json` pode continuar existindo como visao associada diretamente ao relatorio.
+
 ## Regras Gerais de Implementacao
 
 ### 1. Evitar hardcode desnecessario
@@ -207,16 +243,23 @@ Para workloads EKS:
 - nao focar em `NetworkIn` / `NetworkOut` como explicacao principal
 - instancias de EKS sao efemeras
 - o que importa mais e quantas instancias foram usadas e por quanto tempo
-- picos de PDP frequentemente estao ligados a eventos de alta audiencia do Claro TV+
+- picos de PDP frequentemente estao ligados a eventos de alta audiencia do Claro TV+, no arquivod e eventos temos os eventos dos dias
 - normalmente o ambiente e escalado cerca de 1 hora antes do inicio previsto desses eventos
 - a grade de eventos do Claro TV+ e uma fonte de correlacao de negocio valiosa para explicar aumentos de autenticacao/autorizacao
 - a regua de push/eventos do Claro TV+ pode ser usada como calendario de negocio para correlacionar aumento de plays e scaling agendado
+- Eventos no Claro TV+ tendem a causar aumento no nodegroup do PDP.
 - essa regua nao deve ser usada como evidencia direta de custo ou contagem de AWS End User Messaging/SMS
 
 Prioridade de leitura para EKS:
 1. `GroupTotalInstances`
 2. `GroupDesiredCapacity`
 3. `GroupInServiceInstances`
+
+Regra adicional para `EC2 Compute`:
+- nao afirmar causalidade principal para um nodegroup apenas porque houve scaling visivel
+- antes de atribuir o custo a um nodegroup, conferir se o tipo de instancia observado do ASG combina com o `usage_type` do custo
+- quando houver mais de um nodegroup candidato, preferir linguagem de `candidato principal` ou `hipotese mais provavel` se a evidencia ainda for indireta
+- em contexto de evento do Claro TV+, o PDP continua sendo a hipotese primaria mais comum para aumento de compute, mas isso deve ser confirmado com metrica e aderencia de tipo de instancia
 
 O prompt deve orientar a IA a usar:
 - `GroupTotalInstances` como principal evidencia de scaling
@@ -484,6 +527,7 @@ Usage type `NatGateway-Bytes` nao deve cair na regra generica de `EC2-Other` sem
 ### Load Balancers conhecidos
 
 Ja mapeados no `config.py`:
+Load balancers abaixo relacionados a serviços Ping Access, Federate, PDP e Directory:
 - `prd-sso-ciam-privatelink`
   Tipo: network | Uso: SOMENTE integracao de autenticacao/login do Claro TV+; nao carrega PDP/autorizacao
 - `prd-grupoPD-ldap`
@@ -496,6 +540,7 @@ Ja mapeados no `config.py`:
   Tipo: application | Uso: gravacao e alteracao na base do secundario quando o primario esta fora
 - `k8s-prdciam-f6d5697eb4`
   Tipo: application | Uso: Ping Federate, Access e PDP no EKS
+Load balancers abaixo relacionados as apis do fachada sso cadastro, reset e envio de SMS:
 - `k8s-prdssofachada-92ddf9f6c1`
   Tipo: application | Uso: APIs do fachada no EKS
 - `k8s-prdciamexternal-3fba2b5dc7`
@@ -515,13 +560,16 @@ Metricas de Load Balancer priorizadas para correlacao:
 - `prd-sso-ciam`
   Uso: Ping Access, Ping Federate, PDP
 - `prd-sso-fachada`
-  Uso: APIs de credenciais e orquestracao
+  Uso: APIs de cadastro, reset e envio de sms
 
 ### Nodegroups e ASGs conhecidos
-
+Ping access - EKS
 - `eks-ping-access*`
+Ping PDP - EKS
 - `eks-ping-pdp*`
+Ping federate - EKS
 - `eks-ping-federate*`
+Apis Fachada Cadastro, reset envio SMS - EKS
 - `eks-app-*` com `eks:cluster-name = prd-sso-fachada`
 
 ## Como evoluir o projeto sem perder coerencia

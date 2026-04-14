@@ -26,12 +26,26 @@ def build_bedrock_prompt(report_data, context_operational):
     Build the final prompt text sent to Bedrock.
     """
     prompt_template = _load_prompt_template()
+    selected_anomalies = report_data.get("anomalies", [])
+    selected_topics = [
+        f"- {item.get('service')} | {item.get('usage_type') or 'sem usage_type'}"
+        for item in selected_anomalies
+    ]
+    selected_topics_text = "\n".join(selected_topics) if selected_topics else "- Nenhuma anomalia selecionada"
+
     if prompt_template:
         return (
             f"{prompt_template}\n\n"
             f"Contexto operacional consolidado:\n{context_operational}\n\n"
+            f"Itens selecionados para analise principal nesta execucao:\n{selected_topics_text}\n\n"
             "Instrucoes adicionais:\n"
-            "- Use a janela consolidada que termina no anchor_day.\n"
+            # Reinforce a short executive answer even when the payload is rich in detail.
+            "- Entregue resposta curta, objetiva e executiva.\n"
+            "- Selecione apenas os drivers que realmente mudam a leitura do dia.\n"
+            "- Evite repetir contexto e detalhes tecnicos que ja nao alteram conclusao.\n"
+            "- Restrinja conclusoes e recomendacoes aos itens selecionados para analise principal nesta execucao.\n"
+            "- Nao crie recomendacoes sobre S3, GuardDuty ou qualquer outro tema que nao esteja entre os itens selecionados, salvo se forem apenas citados como contexto secundario de um item principal.\n"
+            "- Use a janela consolidada que termina no dia de referencia.\n"
             "- Priorize causalidade entre custo, recurso AWS e metricas associadas.\n"
             "- Diferencie hipoteses fortes de hipoteses fracas.\n"
             "- Aponte se uma anomalia de um recurso pode explicar custo em outros servicos.\n\n"

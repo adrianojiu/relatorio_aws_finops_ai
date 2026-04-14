@@ -235,7 +235,7 @@ Observações:
 8. **Arquivos gerados para inspeção do Bedrock:**
    - `*_bedrock_payload.json`: dados estruturados enviados para analise
    - `*_bedrock_prompt.txt`: prompt final montado pelo sistema
-   - `*_ai.txt`: resposta do Bedrock quando a chamada funcionar
+   - `*_ai.txt`: resposta do Bedrock quando a chamada funcionar, em formato mais executivo e objetivo
    - `*_ai_error.txt`: erro retornado pela integracao, quando houver falha
 
 9. **Compatibilidade atual da integração Bedrock:**
@@ -334,6 +334,7 @@ Observações:
 17. **Notas operacionais importantes:**
    - O relatório sempre gera `*_bedrock_payload.json` e `*_bedrock_prompt.txt`, mesmo sem chamar o Bedrock
    - Se a chamada ao modelo falhar, o processo salva `*_ai_error.txt` no `output`
+   - A execucao agora gera `execucao_<timestamp>.log` em tempo real e `execucao_<timestamp>.json` com o resumo estruturado da execucao
    - `BEDROCK_MAX_TOKENS` aumenta o limite da resposta; isso pode aumentar custo se o modelo realmente usar mais tokens
    - O provider e o tipo de throughput suportado variam por modelo e por conta AWS
    - `--aws-region` controla a região do workload, usada para CloudWatch e descoberta de recursos
@@ -368,6 +369,8 @@ Em uma execução típica, o projeto gera artefatos como:
 ```file system
 output/2026-04-09/relatorio_custos_2026-04-09.txt
 output/2026-04-09/relatorio_custos_2026-04-09.xlsx
+output/2026-04-09/execucao_2026-04-09T08-47-11.log
+output/2026-04-09/execucao_2026-04-09T08-47-11.json
 output/2026-04-09/relatorio_custos_2026-04-09_bedrock_context.txt
 output/2026-04-09/relatorio_custos_2026-04-09_bedrock_payload.json
 output/2026-04-09/relatorio_custos_2026-04-09_bedrock_prompt.txt
@@ -379,6 +382,8 @@ output/2026-04-09/relatorio_custos_2026-04-09_ai_meta.json
 Observações:
 - `*_ai.txt`, `*_ai.pdf` e `*_ai_meta.json` só existem quando a análise Bedrock está habilitada e conclui a execução
 - `*_ai_error.txt` pode ser gerado quando houver falha na chamada ao modelo
+- `execucao_<timestamp>.log` é atualizado durante a execucao e ajuda a identificar a etapa exata de lentidao ou falha
+- `execucao_<timestamp>.json` consolida status, duracao e etapas mesmo quando o relatorio principal nao chega a ser gerado
 - os arquivos ficam agrupados por data para facilitar comparação e histórico
 
 ---

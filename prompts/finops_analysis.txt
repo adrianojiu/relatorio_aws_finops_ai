@@ -14,8 +14,28 @@ Foco da analise:
 - Casos compativeis com streaming, envio de SMS, autenticacao, processamento de dados e filas.
 
 Formato esperado da resposta:
-- Resuma primeiro os achados mais provaveis.
+- Entregue uma resposta executiva, curta e objetiva.
+- Mire em no maximo 500 a 700 palavras no total.
+- Evite introducoes longas, repeticoes, contexto historico excessivo e reescrita do payload.
+- Resuma primeiro os achados mais provaveis em no maximo 5 bullets curtos.
 - Depois apresente somente os itens mais importantes enviados no payload, priorizando no maximo 4 itens.
+- Use exatamente esta estrutura:
+  1. `Resumo executivo`
+  2. `Principais drivers`
+  3. `Recomendacoes`
+  4. `ANALISE CONCLUIDA`
+- Em `Resumo executivo`, entregue bullets curtos, orientados a decisao, sem repetir detalhes tecnicos.
+- Em `Principais drivers`, limite cada item a 4 linhas curtas: classificacao, causa provavel, evidencias principais e confianca.
+- Em `Recomendacoes`, entregue no maximo 3 acoes praticas e objetivas.
+- Se houver apenas 1 ou 2 drivers realmente relevantes, nao force 4 itens.
+- Se um detalhe tecnico nao mudar decisao, classificacao ou proximo passo, nao inclua.
+- Nao afirme que um recurso especifico "puxou" ou "explicou" o custo principal sem evidencia dominante e direta no payload.
+- Se houver apenas correlacao indireta ou mais de um candidato plausivel, use formulacoes como `candidato principal`, `hipotese mais provavel` ou `evidencia parcial`.
+- Para `EC2 Compute`, confira se o tipo de instancia observado no nodegroup candidato combina com o `usage_type` do custo antes de atribuir causalidade principal.
+- Se o payload trouxer `observed_instance_types` para um ASG, use essa informacao como filtro forte de causalidade.
+- Se o `usage_type` nao combinar com o tipo de instancia observado do nodegroup, nao trate esse nodegroup como driver principal do custo; no maximo como candidato secundario.
+- Nao gere recomendacoes de observabilidade para servicos ou recursos que nao estejam entre os itens efetivamente analisados no payload selecionado para a resposta.
+- Nao transforme regras gerais do contexto do projeto em recomendacoes do dia se o payload do dia nao trouxer evidencias concretas daquele gap.
 - Para cada item, classifique explicitamente como `anomalia real`, `desvio esperado` ou `efeito em cascata`.
 - Use `anomalia real` somente quando houver comportamento inesperado, potencialmente evitavel, erro, desperdicio, falha, investigacao necessaria ou sinal operacional atipico.
 - Use `desvio esperado` quando houver variacao relevante, mas compativel com o comportamento normal do ambiente, da carga ou do modelo operacional.
@@ -56,6 +76,8 @@ Formato esperado da resposta:
 - Quando houver eventos/push candidatos no payload, prefira citar quais eventos provavelmente explicam o scaling, usando nome, horario, alcance e nodes quando disponiveis, em vez de usar apenas frases genericas como "evento de streaming".
 - Se houver mais de um evento plausivel no mesmo dia, cite os principais candidatos e deixe claro que sao eventos candidatos, nao uma prova causal unica.
 - Se nao houver calendario de eventos suficiente no payload, ai sim use formulacao generica sobre padrao de streaming ou scaling agendado.
+- Para `EC2 Compute` em ambiente CIAM, quando houver contexto de evento/push do Claro TV+ e candidatos no cluster `prd-sso-ciam`, priorize `ping_pdp` como hipotese principal apenas se houver evidencia compativel de scaling/ocupacao e tipo de instancia aderente ao `usage_type`.
+- Nao conclua que `prd-sso-fachada` foi o driver principal de `EC2 Compute` apenas porque houve scaling de poucas instancias, se o payload tambem mostrar sinais relevantes em `ping_pdp` ou outro nodegroup mais aderente ao contexto e ao tipo de instancia.
 - Para LCU, Transit Gateway e outros servicos de rede, prefira classificar como `desvio esperado` ou `efeito em cascata` quando o comportamento acompanhar claramente aumento legitimo de trafego, scaling agendado ou evento conhecido.
 - Para SMS, so trate como `anomalia real` se houver evidencias de fallback excessivo, falha, retries, backlog, mudanca anormal de mix de canais ou comportamento desproporcional; crescimento organico de volume deve tender a `desvio esperado`.
 - Para CloudWatch Logs `DataScanned-Bytes`, quando o dia de referencia mostrar normalizacao apos um pico anterior, nao chame isso de anomalia principal do dia; trate como evento separado ou contexto historico relevante.
@@ -68,5 +90,7 @@ Formato esperado da resposta:
 - Se houver uma secao consolidada de causalidade, inclua nela apenas drivers primarios e efeitos em cascata diretamente ligados; nao misture nela eventos paralelos de investigacao, como queries ad-hoc de CloudWatch Logs, a menos que haja evidencia de relacao causal com o mesmo fluxo.
 - Finalize com recomendacoes praticas e proximos passos de verificacao, qual seria a solução ou o caminho para a otimizacão.
 - Quando houver buckets candidatos relevantes sem `AllRequests` no payload, inclua como recomendacao habilitar S3 Request Metrics com filtro de bucket inteiro, por exemplo `all-objects`, nos buckets mais importantes para permitir identificacao futura do bucket causador.
+- So recomende habilitar `S3 Request Metrics` quando o payload do dia trouxer explicitamente bucket candidato de S3/GuardDuty sem `AllRequests` observavel.
+- Se o bucket ja trouxer `s3_request_filter_id`, trate isso como indicio de configuracao existente; sem evidencia adicional, nao afirme que a metrica esta desabilitada.
 - Caso tenham algum spike me entregue a causa.
 - Coloque uma marcação de fim de resposta clara, como "ANALISE CONCLUIDA", para evitar que uma resposta seja truncada e não percebida.
