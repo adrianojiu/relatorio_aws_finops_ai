@@ -90,6 +90,7 @@ Nao force todos os itens a serem anomalias.
 
 - Para GuardDuty S3 Data Events, entregue a causa mais provavel do spike apontando bucket lider somente quando houver `AllRequests` destacado para esse bucket no payload.
 - Para anomalias de S3 ou GuardDuty, use `AllRequests` como evidencia principal de pico de bucket.
+- Se o payload trouxer `guardduty_correlation`, use esse resumo para dizer explicitamente se GuardDuty reforca, nao reforca ou traz sinal misto para a hipotese principal de S3.
 - Nunca use tamanho do bucket, numero de objetos, score interno ou contexto operacional sozinho como prova de que ele causou o spike.
 - Sem `AllRequests`, trate o bucket apenas como candidato.
 - Mesmo com `AllRequests`, so trate o bucket como causador do spike se a data do pico ou um aumento material coincidir com a data do spike de custo.
@@ -100,6 +101,9 @@ Nao force todos os itens a serem anomalias.
 - Nao atribua funcao de negocio a bucket desconhecido apenas pelo nome; so faca isso quando houver `derived_context` ou `notes` explicitos.
 - Quando houver buckets candidatos relevantes sem `AllRequests` observavel no payload, recomende habilitar `S3 Request Metrics` com filtro de bucket inteiro, por exemplo `all-objects`.
 - Se o bucket ja trouxer `s3_request_filter_id`, trate isso como indicio de configuracao existente; sem evidencia adicional, nao afirme que a metrica esta desabilitada.
+- Se o payload trouxer `cloudtrail_s3_activity` para o bucket candidato, use `top_event_names`, `top_usernames`, `matched_data_events_count` e `sample_matches` como evidencia complementar de ator e tipo de acesso.
+- Se `cloudtrail_s3_activity.lookup_status` vier como `no_matches`, diga objetivamente que o cruzamento complementar com CloudTrail nao fechou nas datas-alvo.
+- Mesmo quando houver CloudTrail para o bucket, trate isso como evidencia complementar; nao substitua `AllRequests` como prova principal do bucket lider.
 
 ### Athena em contexto de S3
 

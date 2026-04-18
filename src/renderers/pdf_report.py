@@ -36,6 +36,12 @@ HEADER_FILL_GRAY = 0.93
 TITLE_FILL_GRAY = 0.96
 ACCENT_RED = "0.72 0.12 0.16"
 TEXT_DARK = "0.12 0.12 0.12"
+CHART_FILL_GRAY = 0.985
+CHART_AXIS_GRAY = "0.75 0.75 0.75"
+CHART_BAR_RED = "0.82 0.18 0.20"
+CHART_BAR_SOFT = "0.89 0.54 0.56"
+CARD_BORDER_GRAY = "0.86 0.86 0.86"
+POSITIVE_BLUE = "0.45 0.63 0.86"
 LOGO_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "prompts",
@@ -115,6 +121,244 @@ def _blank(height=8):
 
 def _separator():
     return {"separator": True, "leading": 12}
+
+
+def _has_items(value):
+    """
+    Safely test whether list-like inputs contain data without relying on pandas truthiness.
+    """
+    if value is None:
+        return False
+    if hasattr(value, "empty"):
+        return not value.empty
+    try:
+        return len(value) > 0
+    except TypeError:
+        return bool(value)
+
+
+def _truncate_chart_label(text, limit=18):
+    if len(text) <= limit:
+        return text
+    return text[: max(limit - 3, 1)].rstrip() + "..."
+
+
+def _format_compact_currency(value):
+    absolute = abs(float(value))
+    if absolute >= 1000:
+        return f"US$ {value / 1000:.1f}k"
+    if absolute >= 100:
+        return f"US$ {value:,.0f}"
+    return f"US$ {value:,.1f}"
+
+
+def _split_summary_label(label):
+    if len(label) <= 14 or " " not in label:
+        return [label]
+    parts = label.split()
+    midpoint = max(1, len(parts) // 2)
+    return [" ".join(parts[:midpoint]), " ".join(parts[midpoint:])]
+
+
+def _build_vertical_bar_chart_item(title, data_points, subtitle=None):
+    if not data_points:
+        return None
+
+    prepared_points = [
+        {
+            "label": str(label),
+            "value": float(value),
+        }
+        for label, value in data_points
+    ]
+    return {
+        "chart": True,
+        "variant": "vertical_bar",
+        "title": title,
+        "subtitle": subtitle,
+        "data": prepared_points,
+        "height": 210,
+        "leading": 218,
+    }
+
+
+def _build_horizontal_bar_chart_item(title, data_points, subtitle=None):
+    if not data_points:
+        return None
+
+    prepared_points = [
+        {
+            "label": str(label),
+            "value": float(value),
+        }
+        for label, value in data_points
+    ]
+    return {
+        "chart": True,
+        "variant": "horizontal_bar",
+        "title": title,
+        "subtitle": subtitle,
+        "data": prepared_points,
+        "height": 190,
+        "leading": 198,
+    }
+
+
+def _build_ai_variation_chart_item(title, anomalies, subtitle=None):
+    if not anomalies:
+        return None
+
+    prepared_points = []
+    for anomaly in anomalies:
+        label = anomaly.get("service") or anomaly.get("usage_type") or "Servico"
+        prepared_points.append(
+            {
+                "label": str(label),
+                "value": float(abs(anomaly.get("delta_pct", 0.0))),
+                "signed_value": float(anomaly.get("delta_pct", 0.0)),
+                "delta_usd": float(anomaly.get("delta_usd", 0.0)),
+            }
+        )
+
+    return {
+        "chart": True,
+        "variant": "variation_bar",
+        "title": title,
+        "subtitle": subtitle,
+        "data": prepared_points,
+        "height": 190,
+        "leading": 198,
+    }
+
+
+def _classification_palette(classification):
+    normalized = (classification or "").strip().lower()
+    if normalized == "anomalia real":
+        return {
+            "label": "ANOMALIA REAL",
+            "fill": "0.96 0.85 0.85",
+            "text": "0.64 0.12 0.16",
+        }
+    if normalized == "efeito em cascata":
+        return {
+            "label": "EFEITO EM CASCATA",
+            "fill": "0.86 0.91 0.97",
+            "text": "0.18 0.37 0.63",
+        }
+    return {
+        "label": "DESVIO ESPERADO",
+        "fill": "0.91 0.95 0.86",
+        "text": "0.26 0.45 0.14",
+    }
+
+
+def _extract_ai_driver_sections(text):
+    """
+    Parse the AI narrative headings to recover driver metadata for visual cards.
+    """
+    sanitized = _sanitize_pdf_text(text)
+    pattern = re.compile(
+        r"###\s+\d+\.\s+(.*?)\s+[-—]\s+`([^`]+)`\s+\|\s+([^\n]+)\n"
+        r"\*\*Classificacao:\*\*\s+`([^`]+)`\n\n"
+        r"(.*?)(?=\n---\n|\n###\s+\d+\.|\n##\s+Recomendacoes|\Z)",
+        flags=re.DOTALL,
+    )
+    sections = []
+    for service, usage_type, headline_value, classification, body in pattern.findall(sanitized):
+        body_lines = [line.strip() for line in body.strip().splitlines() if line.strip()]
+        confidence = ""
+        narrative_lines = []
+        for line in body_lines:
+            if line.lower().startswith("confianca:"):
+                confidence = line.split(":", 1)[1].strip()
+            else:
+                narrative_lines.append(line)
+        sections.append(
+            {
+                "service": service.strip(),
+                "usage_type": usage_type.strip(),
+                "headline_value": headline_value.strip(),
+                "classification": classification.strip(),
+                "narrative": " ".join(narrative_lines).strip(),
+                "confidence": confidence,
+            }
+        )
+    return sections
+
+
+def _build_ai_classification_summary_item(driver_sections):
+    if not driver_sections:
+        return None
+
+    order = ["anomalia real", "desvio esperado", "efeito em cascata"]
+    counts = {key: 0 for key in order}
+    for section in driver_sections:
+        key = (section.get("classification") or "").strip().lower()
+        if key in counts:
+            counts[key] += 1
+
+    data = []
+    for key in order:
+        palette = _classification_palette(key)
+        data.append(
+            {
+                "label": palette["label"],
+                "value": counts[key],
+                "fill": palette["fill"],
+                "text": palette["text"],
+            }
+        )
+
+    return {
+        "classification_summary": True,
+        "title": "Leitura rapida das classificacoes",
+        "subtitle": "Distribuicao dos drivers destacados pela analise da IA.",
+        "data": data,
+        "height": 96,
+        "leading": 104,
+    }
+
+
+def _build_ai_driver_cards_item(driver_sections, anomalies):
+    if not driver_sections:
+        return None
+
+    anomaly_map = {
+        (
+            (item.get("service") or "").strip(),
+            (item.get("usage_type") or "").strip(),
+        ): item
+        for item in (anomalies or [])
+    }
+    cards = []
+    for section in driver_sections:
+        anomaly = anomaly_map.get((section["service"], section["usage_type"]), {})
+        resources = anomaly.get("resources") or []
+        top_resources = []
+        for resource in resources[:3]:
+            resource_id = resource.get("resource_id") or "nao identificado"
+            top_resources.append(_truncate_chart_label(str(resource_id), 34))
+
+        cards.append(
+            {
+                "service": section["service"],
+                "usage_type": section["usage_type"],
+                "classification": section["classification"],
+                "headline_value": section["headline_value"],
+                "delta_pct": float(anomaly.get("delta_pct", 0.0)),
+                "confidence": section.get("confidence") or "nao informado",
+                "resources": top_resources,
+            }
+        )
+
+    return {
+        "anomaly_cards": True,
+        "title": "Drivers analisados pela IA",
+        "subtitle": "Cards com classificacao, variacao e recursos candidatos para leitura rapida.",
+        "cards": cards,
+        "height": max(120 + (len(cards) * 84), 200),
+        "leading": max(128 + (len(cards) * 84), 208),
+    }
 
 
 def _wrap_line(text, font=BODY_FONT, size=BODY_SIZE, indent=0, leading=None):
@@ -600,6 +844,15 @@ def _build_page_stream(page_items, page_number, total_pages, account_label=None,
         if item.get("table"):
             y = _render_table(commands, item, y)
             continue
+        if item.get("chart"):
+            y = _render_chart(commands, item, y)
+            continue
+        if item.get("classification_summary"):
+            y = _render_classification_summary(commands, item, y)
+            continue
+        if item.get("anomaly_cards"):
+            y = _render_anomaly_cards(commands, item, y)
+            continue
 
         text = _escape_and_encode(item["text"])
         x = LEFT_MARGIN + item.get("indent", 0)
@@ -781,11 +1034,423 @@ def _render_flow_block(commands, flow_item, top_y):
     return bottom_y - 6
 
 
-def write_text_pdf(output_file, text, account_label=None):
+def _render_chart_title(commands, x0, top_y, title, subtitle=None):
+    commands.extend(
+        [
+            "BT",
+            f"{ACCENT_RED} rg",
+            f"/{BODY_BOLD_FONT} {H3_SIZE} Tf",
+            f"{x0 + 12} {top_y - 18} Td",
+            f"({_escape_and_encode(title)}) Tj",
+            "ET",
+        ]
+    )
+    if subtitle:
+        commands.extend(
+            [
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} {SMALL_SIZE} Tf",
+                f"{x0 + 12} {top_y - 31} Td",
+                f"({_escape_and_encode(subtitle)}) Tj",
+                "ET",
+            ]
+        )
+
+
+def _render_vertical_bar_chart(commands, chart_item, top_y):
+    x0 = LEFT_MARGIN
+    width = CONTENT_WIDTH
+    height = chart_item["height"] - 4
+    bottom_y = top_y - height
+    plot_left = x0 + 44
+    plot_right = x0 + width - 20
+    plot_top = top_y - 44
+    plot_bottom = bottom_y + 40
+    plot_width = plot_right - plot_left
+    plot_height = max(plot_top - plot_bottom, 40)
+    points = chart_item["data"]
+    max_value = max(point["value"] for point in points) or 1
+    bar_gap = 8
+    bar_width = max(min((plot_width - (bar_gap * (len(points) + 1))) / max(len(points), 1), 36), 10)
+
+    commands.extend(
+        [
+            "q",
+            f"{CHART_FILL_GRAY} g",
+            f"{x0} {bottom_y} {width} {height} re f",
+            f"{ACCENT_RED} RG",
+            "0.8 w",
+            f"{x0} {bottom_y} {width} {height} re S",
+            "Q",
+        ]
+    )
+    _render_chart_title(commands, x0, top_y, chart_item["title"], chart_item.get("subtitle"))
+
+    commands.extend(
+        [
+            f"{CHART_AXIS_GRAY} RG",
+            "0.5 w",
+            f"{plot_left} {plot_bottom} m {plot_right} {plot_bottom} l S",
+            f"{plot_left} {plot_bottom} m {plot_left} {plot_top} l S",
+        ]
+    )
+
+    for step in range(1, 4):
+        grid_y = plot_bottom + ((plot_height * step) / 4)
+        commands.extend(
+            [
+                f"{CHART_AXIS_GRAY} RG",
+                "0.25 w",
+                f"{plot_left} {grid_y} m {plot_right} {grid_y} l S",
+            ]
+        )
+
+    current_x = plot_left + bar_gap
+    for point in points:
+        bar_height = max((point["value"] / max_value) * (plot_height - 6), 2)
+        value_label = _format_compact_currency(point["value"])
+        label_x = max(current_x - 4, plot_left + 2)
+        commands.extend(
+            [
+                "q",
+                f"{CHART_BAR_RED} rg",
+                f"{current_x} {plot_bottom} {bar_width} {bar_height} re f",
+                "Q",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 6 Tf",
+                f"{label_x} {plot_bottom - 12} Td",
+                f"({_escape_and_encode(_truncate_chart_label(point['label'], 10))}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 6 Tf",
+                f"{label_x} {plot_bottom + bar_height + 4} Td",
+                f"({_escape_and_encode(value_label)}) Tj",
+                "ET",
+            ]
+        )
+        current_x += bar_width + bar_gap
+
+    return bottom_y - 6
+
+
+def _render_horizontal_bar_chart(commands, chart_item, top_y):
+    x0 = LEFT_MARGIN
+    width = CONTENT_WIDTH
+    height = chart_item["height"] - 4
+    bottom_y = top_y - height
+    plot_left = x0 + 132
+    plot_right = x0 + width - 20
+    plot_top = top_y - 42
+    plot_bottom = bottom_y + 20
+    points = chart_item["data"]
+    max_value = max(point["value"] for point in points) or 1
+    usable_height = max(plot_top - plot_bottom, 30)
+    row_height = usable_height / max(len(points), 1)
+    bar_height = max(min(row_height * 0.56, 16), 8)
+
+    commands.extend(
+        [
+            "q",
+            f"{CHART_FILL_GRAY} g",
+            f"{x0} {bottom_y} {width} {height} re f",
+            f"{ACCENT_RED} RG",
+            "0.8 w",
+            f"{x0} {bottom_y} {width} {height} re S",
+            "Q",
+        ]
+    )
+    _render_chart_title(commands, x0, top_y, chart_item["title"], chart_item.get("subtitle"))
+
+    commands.extend(
+        [
+            f"{CHART_AXIS_GRAY} RG",
+            "0.5 w",
+            f"{plot_left} {plot_bottom} m {plot_left} {plot_top} l S",
+        ]
+    )
+
+    current_y = plot_top - row_height + ((row_height - bar_height) / 2)
+    for point in points:
+        bar_width = max(((point["value"] / max_value) * (plot_right - plot_left - 8)), 2)
+        value_label = _format_compact_currency(point["value"])
+        value_x = min(plot_left + bar_width + 6, plot_right - 42)
+        commands.extend(
+            [
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 8 Tf",
+                f"{x0 + 12} {current_y + 3} Td",
+                f"({_escape_and_encode(_truncate_chart_label(point['label'], 24))}) Tj",
+                "ET",
+                "q",
+                f"{CHART_BAR_SOFT} rg",
+                f"{plot_left} {current_y} {bar_width} {bar_height} re f",
+                "Q",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 7 Tf",
+                f"{value_x} {current_y + 3} Td",
+                f"({_escape_and_encode(value_label)}) Tj",
+                "ET",
+            ]
+        )
+        current_y -= row_height
+
+    return bottom_y - 6
+
+
+def _render_variation_bar_chart(commands, chart_item, top_y):
+    x0 = LEFT_MARGIN
+    width = CONTENT_WIDTH
+    height = chart_item["height"] - 4
+    bottom_y = top_y - height
+    plot_left = x0 + 132
+    plot_right = x0 + width - 20
+    plot_top = top_y - 42
+    plot_bottom = bottom_y + 20
+    zero_x = plot_left + ((plot_right - plot_left) / 2)
+    points = chart_item["data"]
+    max_value = max(point["value"] for point in points) or 1
+    usable_height = max(plot_top - plot_bottom, 30)
+    row_height = usable_height / max(len(points), 1)
+    bar_height = max(min(row_height * 0.56, 16), 8)
+    half_plot = (plot_right - plot_left) / 2
+
+    commands.extend(
+        [
+            "q",
+            f"{CHART_FILL_GRAY} g",
+            f"{x0} {bottom_y} {width} {height} re f",
+            f"{ACCENT_RED} RG",
+            "0.8 w",
+            f"{x0} {bottom_y} {width} {height} re S",
+            "Q",
+        ]
+    )
+    _render_chart_title(commands, x0, top_y, chart_item["title"], chart_item.get("subtitle"))
+
+    commands.extend(
+        [
+            f"{CHART_AXIS_GRAY} RG",
+            "0.5 w",
+            f"{zero_x} {plot_bottom} m {zero_x} {plot_top} l S",
+        ]
+    )
+
+    current_y = plot_top - row_height + ((row_height - bar_height) / 2)
+    for point in points:
+        signed_value = point.get("signed_value", point["value"])
+        bar_width = max((point["value"] / max_value) * (half_plot - 8), 2)
+        percent_label = f"{signed_value:+.1f}%"
+        usd_label = f"{point.get('delta_usd', 0.0):+,.2f} USD"
+        bar_x = zero_x if signed_value >= 0 else zero_x - bar_width
+        bar_color = CHART_BAR_RED if signed_value >= 0 else "0.45 0.63 0.86"
+        label_x = plot_left - 120
+        if signed_value >= 0:
+            value_x = min(zero_x + bar_width + 6, plot_right - 52)
+        else:
+            value_x = max(zero_x - bar_width - 52, plot_left + 4)
+        commands.extend(
+            [
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 8 Tf",
+                f"{label_x} {current_y + 3} Td",
+                f"({_escape_and_encode(_truncate_chart_label(point['label'], 24))}) Tj",
+                "ET",
+                "q",
+                f"{bar_color} rg",
+                f"{bar_x} {current_y} {bar_width} {bar_height} re f",
+                "Q",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_BOLD_FONT} 7 Tf",
+                f"{value_x} {current_y + 8} Td",
+                f"({_escape_and_encode(percent_label)}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 6 Tf",
+                f"{value_x} {current_y + 1} Td",
+                f"({_escape_and_encode(usd_label)}) Tj",
+                "ET",
+            ]
+        )
+        current_y -= row_height
+
+    return bottom_y - 6
+
+
+def _render_classification_summary(commands, summary_item, top_y):
+    x0 = LEFT_MARGIN
+    width = CONTENT_WIDTH
+    height = summary_item["height"] - 4
+    bottom_y = top_y - height
+    box_gap = 10
+    box_width = (width - (box_gap * 4)) / 3
+    box_y = bottom_y + 18
+    box_height = 44
+
+    commands.extend(
+        [
+            "q",
+            f"{CHART_FILL_GRAY} g",
+            f"{x0} {bottom_y} {width} {height} re f",
+            f"{ACCENT_RED} RG",
+            "0.8 w",
+            f"{x0} {bottom_y} {width} {height} re S",
+            "Q",
+        ]
+    )
+    _render_chart_title(commands, x0, top_y, summary_item["title"], summary_item.get("subtitle"))
+
+    current_x = x0 + box_gap
+    for item in summary_item["data"]:
+        label_lines = _split_summary_label(item["label"])
+        commands.extend(
+            [
+                "q",
+                f"{item['fill']} rg",
+                f"{current_x} {box_y} {box_width} {box_height} re f",
+                f"{CARD_BORDER_GRAY} RG",
+                "0.5 w",
+                f"{current_x} {box_y} {box_width} {box_height} re S",
+                "Q",
+                "BT",
+                f"{item['text']} rg",
+                f"/{BODY_BOLD_FONT} 6 Tf",
+                f"{current_x + 8} {box_y + 31} Td",
+                f"({_escape_and_encode(label_lines[0])}) Tj",
+                "ET",
+            ]
+        )
+        if len(label_lines) > 1:
+            commands.extend(
+                [
+                    "BT",
+                    f"{item['text']} rg",
+                    f"/{BODY_BOLD_FONT} 6 Tf",
+                    f"{current_x + 8} {box_y + 23} Td",
+                    f"({_escape_and_encode(label_lines[1])}) Tj",
+                    "ET",
+                ]
+            )
+        commands.extend(
+            [
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_BOLD_FONT} 13 Tf",
+                f"{current_x + 8} {box_y + 8} Td",
+                f"({_escape_and_encode(str(item['value']))}) Tj",
+                "ET",
+            ]
+        )
+        current_x += box_width + box_gap
+
+    return bottom_y - 6
+
+
+def _render_anomaly_cards(commands, cards_item, top_y):
+    x0 = LEFT_MARGIN
+    width = CONTENT_WIDTH
+    height = cards_item["height"] - 4
+    bottom_y = top_y - height
+    card_x = x0 + 10
+    card_width = width - 20
+    card_height = 72
+    card_gap = 10
+    current_y = top_y - 48
+
+    commands.extend(
+        [
+            "q",
+            f"{CHART_FILL_GRAY} g",
+            f"{x0} {bottom_y} {width} {height} re f",
+            f"{ACCENT_RED} RG",
+            "0.8 w",
+            f"{x0} {bottom_y} {width} {height} re S",
+            "Q",
+        ]
+    )
+    _render_chart_title(commands, x0, top_y, cards_item["title"], cards_item.get("subtitle"))
+
+    for card in cards_item["cards"]:
+        palette = _classification_palette(card["classification"])
+        card_bottom = current_y - card_height
+        resources_text = "Recursos: " + (", ".join(card["resources"]) if card["resources"] else "sem candidato claro")
+        delta_label = f"{card['delta_pct']:+.2f}%"
+        delta_color = ACCENT_RED if card["delta_pct"] >= 0 else POSITIVE_BLUE
+        commands.extend(
+            [
+                "q",
+                "1 1 1 rg",
+                f"{card_x} {card_bottom} {card_width} {card_height} re f",
+                f"{CARD_BORDER_GRAY} RG",
+                "0.6 w",
+                f"{card_x} {card_bottom} {card_width} {card_height} re S",
+                "Q",
+                "q",
+                f"{palette['fill']} rg",
+                f"{card_x + 10} {card_bottom + 48} 118 16 re f",
+                "Q",
+                "BT",
+                f"{palette['text']} rg",
+                f"/{BODY_BOLD_FONT} 7 Tf",
+                f"{card_x + 15} {card_bottom + 53} Td",
+                f"({_escape_and_encode(palette['label'])}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_BOLD_FONT} 10 Tf",
+                f"{card_x + 10} {card_bottom + 33} Td",
+                f"({_escape_and_encode(_truncate_chart_label(card['service'], 46))}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 8 Tf",
+                f"{card_x + 10} {card_bottom + 19} Td",
+                f"({_escape_and_encode(_truncate_chart_label(card['usage_type'], 64))}) Tj",
+                "ET",
+                "BT",
+                f"{delta_color} rg",
+                f"/{BODY_BOLD_FONT} 12 Tf",
+                f"{card_x + card_width - 76} {card_bottom + 48} Td",
+                f"({_escape_and_encode(delta_label)}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 8 Tf",
+                f"{card_x + card_width - 110} {card_bottom + 33} Td",
+                f"({_escape_and_encode(_truncate_chart_label(card['headline_value'], 26))}) Tj",
+                "ET",
+                "BT",
+                f"{TEXT_DARK} rg",
+                f"/{BODY_FONT} 7 Tf",
+                f"{card_x + 10} {card_bottom + 7} Td",
+                f"({_escape_and_encode(_truncate_chart_label(resources_text, 100))}) Tj",
+                "ET",
+            ]
+        )
+        current_y = card_bottom - card_gap
+
+    return bottom_y - 6
+
+
+def _render_chart(commands, chart_item, top_y):
+    if chart_item["variant"] == "variation_bar":
+        return _render_variation_bar_chart(commands, chart_item, top_y)
+    if chart_item["variant"] == "horizontal_bar":
+        return _render_horizontal_bar_chart(commands, chart_item, top_y)
+    return _render_vertical_bar_chart(commands, chart_item, top_y)
+
+
+def _write_pdf_document(output_file, layout_lines, account_label=None):
     """
-    Write a styled PDF from a plain-text/markdown-like report.
+    Render the prepared layout items into a standalone PDF file.
     """
-    layout_lines = _prepare_layout_lines(text)
     pages = _paginate_layout_lines(layout_lines)
 
     objects = []
@@ -876,3 +1541,24 @@ def write_text_pdf(output_file, text, account_label=None):
     with open(output_file, "wb") as file_handle:
         for part in pdf_parts:
             file_handle.write(part)
+
+
+def write_text_pdf(output_file, text, account_label=None):
+    """
+    Write a styled PDF from a plain-text/markdown-like report.
+    """
+    _write_pdf_document(output_file, _prepare_layout_lines(text), account_label=account_label)
+
+
+def write_cost_report_pdf(output_file, text, daily_costs=None, top_costs=None, sms_por_dia=None, account_label=None):
+    """
+    Write the main cost report PDF preserving the original text and adding summary charts first.
+    """
+    _write_pdf_document(output_file, _prepare_layout_lines(text), account_label=account_label)
+
+
+def write_ai_analysis_pdf(output_file, text, report_data=None, account_label=None):
+    """
+    Write the AI analysis PDF preserving the analysis text and adding charts from the Bedrock payload.
+    """
+    _write_pdf_document(output_file, _prepare_layout_lines(text), account_label=account_label)

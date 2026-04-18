@@ -86,6 +86,7 @@ Gerar um relatorio diario de custos AWS com:
 Saidas principais:
 
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.txt`
+- `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.pdf`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.xlsx`
 - `output/YYYY-MM-DD/execucao_<timestamp>.log`
 - `output/YYYY-MM-DD/execucao_<timestamp>.json`
@@ -332,6 +333,9 @@ Regra de leitura:
 - sem `AllRequests`, nao concluir bucket lider com alta confianca
 - com `AllRequests`, comparar a data do spike do bucket com a data do spike de custo
 - quando um bucket lider estiver claramente identificado por requests, correlacoes com EKS, logs ou outros servicos viram contexto secundario
+- para anomalias de S3, vale sempre tentar uma correlacao leve com a propria anomalia de `SAE1-PaidS3DataEventsAnalyzed` quando ela existir na mesma execucao
+- se GuardDuty estiver presente no payload e subir na mesma direcao da anomalia de S3, isso reforca a hipotese; se estiver em queda ou neutro, ele nao deve ser usado como reforco indevido
+- GuardDuty entra como evidencia complementar, nunca como substituto do bucket lider por `AllRequests`
 
 ### SMS e End User Messaging
 
@@ -386,6 +390,17 @@ Contexto operacional conhecido:
 
 - no inicio do mes, normalmente por volta do dia 2, pode haver queries nos logs do CloudWatch para consumo de APIs e envio ao time de FinOps
 - na primeira semana do mes tambem podem ocorrer queries para preparacao de reunioes de MBR
+
+### CloudTrail para anomalias de S3
+
+Para anomalias de S3, CloudTrail deve ser usado como enriquecimento seletivo, nao como consulta pesada obrigatoria para todo bucket.
+
+Regra pratica:
+
+- sempre tentar uma correlacao leve com GuardDuty
+- fazer lookup adicional de CloudTrail apenas quando houver bucket candidato com `AllRequests` minimamente aderente ao spike
+- usar CloudTrail para identificar ator, origem e tipo de evento quando isso ajudar a distinguir atividade legitima de anomalia real
+- mesmo com CloudTrail, `AllRequests` continua sendo a evidencia principal para bucket lider
 
 ### AWS Backup
 

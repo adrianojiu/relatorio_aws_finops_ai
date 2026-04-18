@@ -507,8 +507,8 @@ def _build_logs_client(session):
     return session.client("logs", region_name=config.WORKLOAD_REGION)
 
 
-def _build_cloudtrail_client(session):
-    return session.client("cloudtrail", region_name=config.WORKLOAD_REGION)
+def _build_cloudtrail_client(session, region_name=None):
+    return session.client("cloudtrail", region_name=region_name or config.WORKLOAD_REGION)
 
 
 def _build_athena_client(session):
@@ -672,6 +672,194 @@ def _lookup_cloudtrail_startqueryexecution_context(session, query_execution_id, 
         return matches[: config.CLOUDTRAIL_MAX_MATCHES_PER_QUERY]
     except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
         return []
+
+
+def _extract_cloudtrail_s3_bucket_match(event, bucket_name, target_time):
+    raw_event = event.get("CloudTrailEvent")
+    if not raw_event:
+        return None
+
+    try:
+        parsed = json.loads(raw_event)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    request_parameters = parsed.get("requestParameters") or {}
+    matched_via = None
+    request_bucket_name = request_parameters.get("bucketName")
+    if _normalize_text(request_bucket_name) == _normalize_text(bucket_name):
+        matched_via = "request_parameters.bucketName"
+
+    if matched_via is None:
+        for resource in parsed.get("resources", []) or []:
+            resource_arn = (resource.get("ARN") or resource.get("arn") or "").strip()
+            if resource_arn.startswith(f"arn:aws:s3:::{bucket_name}"):
+                matched_via = "resources.arn"
+                break
+
+    if matched_via is None:
+        for resource in event.get("Resources", []) or []:
+            resource_name = (resource.get("ResourceName") or "").strip()
+            if resource_name == bucket_name:
+                matched_via = "event.resources"
+                break
+
+    if matched_via is None:
+        return None
+
+    event_time = event.get("EventTime")
+    if event_time is None:
+        return None
+
+    user_identity = parsed.get("userIdentity") or {}
+    session_issuer = (
+        ((user_identity.get("sessionContext") or {}).get("sessionIssuer") or {})
+        if isinstance(user_identity, dict)
+        else {}
+    )
+    username = (
+        user_identity.get("arn")
+        or user_identity.get("userName")
+        or session_issuer.get("arn")
+        or session_issuer.get("userName")
+        or event.get("Username")
+    )
+
+    delta_seconds = abs((event_time - target_time).total_seconds())
+    return {
+        "event_id": event.get("EventId"),
+        "event_time": event_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "event_name": event.get("EventName"),
+        "event_source": event.get("EventSource"),
+        "event_category": parsed.get("eventCategory"),
+        "read_only": parsed.get("readOnly"),
+        "username": username,
+        "source_ip": parsed.get("sourceIPAddress"),
+        "user_agent": parsed.get("userAgent"),
+        "matched_via": matched_via,
+        "time_delta_seconds": round(delta_seconds, 1),
+    }
+
+
+def _summarize_cloudtrail_s3_matches(matches, lookup_region, target_dates):
+    if matches is None:
+        return {
+            "lookup_status": "unavailable",
+            "lookup_region": lookup_region,
+            "target_dates": target_dates,
+        }
+
+    if not matches:
+        return {
+            "lookup_status": "no_matches",
+            "lookup_region": lookup_region,
+            "target_dates": target_dates,
+            "matched_events_count": 0,
+        }
+
+    event_name_counts = {}
+    username_counts = {}
+    data_event_count = 0
+
+    for match in matches:
+        event_name = match.get("event_name") or "unknown"
+        username = match.get("username") or "unknown"
+        event_name_counts[event_name] = event_name_counts.get(event_name, 0) + 1
+        username_counts[username] = username_counts.get(username, 0) + 1
+        if match.get("event_category") == "Data":
+            data_event_count += 1
+
+    def _top_items(counter_map):
+        ranked = sorted(counter_map.items(), key=lambda item: (-item[1], item[0]))
+        return [
+            {"value": value, "count": count}
+            for value, count in ranked[: config.S3_CLOUDTRAIL_MAX_SUMMARY_ITEMS]
+        ]
+
+    return {
+        "lookup_status": "matched",
+        "lookup_region": lookup_region,
+        "target_dates": target_dates,
+        "matched_events_count": len(matches),
+        "matched_data_events_count": data_event_count,
+        "top_event_names": _top_items(event_name_counts),
+        "top_usernames": _top_items(username_counts),
+        "sample_matches": matches[: config.S3_CLOUDTRAIL_MAX_MATCHES],
+    }
+
+
+def _build_target_datetime_for_date(date_text):
+    return datetime.strptime(date_text, "%Y-%m-%d").replace(hour=12, tzinfo=timezone.utc)
+
+
+def _determine_s3_cloudtrail_target_dates(anomaly, metrics_summary):
+    target_dates = []
+    anchor_day = anomaly.get("anchor_day")
+    if anchor_day:
+        target_dates.append(anchor_day)
+
+    all_requests = metrics_summary.get("AllRequests") or {}
+    peak_date = all_requests.get("peak_date")
+    if peak_date and peak_date != anchor_day:
+        anchor_dt = datetime.strptime(anchor_day, "%Y-%m-%d").date() if anchor_day else None
+        peak_dt = datetime.strptime(peak_date, "%Y-%m-%d").date()
+        if anchor_dt is None or abs((anchor_dt - peak_dt).days) <= config.S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS:
+            target_dates.append(peak_date)
+
+    return list(dict.fromkeys(target_dates))
+
+
+def _lookup_cloudtrail_s3_bucket_context(session, bucket_name, target_dates, region_name):
+    client = _build_cloudtrail_client(session, region_name=region_name)
+    collected_matches = []
+    seen_event_ids = set()
+
+    try:
+        for target_date in target_dates:
+            target_time = _build_target_datetime_for_date(target_date)
+            start_time = target_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_time = target_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+            paginator = client.get_paginator("lookup_events")
+            for page in paginator.paginate(
+                LookupAttributes=[{"AttributeKey": "EventSource", "AttributeValue": "s3.amazonaws.com"}],
+                StartTime=start_time,
+                EndTime=end_time,
+            ):
+                for event in page.get("Events", []):
+                    match = _extract_cloudtrail_s3_bucket_match(
+                        event=event,
+                        bucket_name=bucket_name,
+                        target_time=target_time,
+                    )
+                    if not match:
+                        continue
+
+                    event_id = match.get("event_id")
+                    if event_id and event_id in seen_event_ids:
+                        continue
+                    if event_id:
+                        seen_event_ids.add(event_id)
+                    collected_matches.append(match)
+
+                    if len(collected_matches) >= config.S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS:
+                        break
+
+                if len(collected_matches) >= config.S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS:
+                    break
+
+            if len(collected_matches) >= config.S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS:
+                break
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
+        return _summarize_cloudtrail_s3_matches(None, region_name, target_dates)
+
+    collected_matches.sort(
+        key=lambda item: (
+            item.get("time_delta_seconds", 999999),
+            item.get("event_time") or "",
+        )
+    )
+    return _summarize_cloudtrail_s3_matches(collected_matches, region_name, target_dates)
 
 
 def _normalize_logs_query_definition_map(client):
@@ -920,6 +1108,35 @@ def _should_collect_athena_query_activity(anomaly, candidate, metrics_summary):
     if today_value > 0 and avg_value > 0 and today_value >= avg_value * 1.2:
         return True
     if delta_pct >= 20.0:
+        return True
+
+    return False
+
+
+def _should_collect_s3_cloudtrail_activity(anomaly, candidate, metrics_summary):
+    if candidate.get("resource_id") is None:
+        return False
+
+    service_name = (anomaly.get("service") or "").lower()
+    usage_type = (anomaly.get("usage_type") or "").lower()
+    if "guardduty" not in service_name and "simple storage service" not in service_name and service_name != "s3":
+        return False
+
+    if "paids3dataeventsanalyzed" not in usage_type and "requests" not in usage_type:
+        return False
+
+    all_requests = metrics_summary.get("AllRequests") or {}
+    if not all_requests:
+        return False
+
+    today_value = float(all_requests.get("today", 0.0) or 0.0)
+    avg_value = float(all_requests.get("avg_7d", 0.0) or 0.0)
+    peak_date = all_requests.get("peak_date")
+    anchor_day = anomaly.get("anchor_day")
+
+    if peak_date == anchor_day:
+        return True
+    if avg_value > 0 and today_value >= avg_value * config.S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO:
         return True
 
     return False
@@ -1204,6 +1421,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             metrics_summary = {}
         query_activity = []
         athena_query_activity = []
+        cloudtrail_s3_activity = None
         athena_lookup_attempted = False
         if resource_type == "log_group":
             try:
@@ -1230,7 +1448,22 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
                 )
             except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
                 athena_query_activity = []
-        candidate_confidence = "medium" if metrics_summary or query_activity or athena_query_activity else "low"
+        if resource_type == "s3_bucket" and _should_collect_s3_cloudtrail_activity(
+            anomaly=anomaly,
+            candidate=candidate,
+            metrics_summary=metrics_summary,
+        ):
+            cloudtrail_s3_activity = _lookup_cloudtrail_s3_bucket_context(
+                session=session,
+                bucket_name=candidate.get("resource_id"),
+                target_dates=_determine_s3_cloudtrail_target_dates(anomaly, metrics_summary),
+                region_name=candidate.get("derived_context", {}).get("bucket_region") or config.WORKLOAD_REGION,
+            )
+        candidate_confidence = (
+            "medium"
+            if metrics_summary or query_activity or athena_query_activity or cloudtrail_s3_activity
+            else "low"
+        )
         candidate_payload = {
             "resource_type": resource_type,
             "resource_id": candidate.get("resource_id"),
@@ -1247,6 +1480,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             "metrics": metrics_summary,
             "query_activity": query_activity,
             "athena_query_activity": athena_query_activity,
+            "cloudtrail_s3_activity": cloudtrail_s3_activity,
             "possible_impacted_services": rule.get("possible_impacted_services", []),
             "hypothesis": rule.get("hypothesis"),
         }
@@ -1257,6 +1491,12 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             notes.append("Nenhum metadado de query do CloudWatch Logs foi encontrado no periodo consolidado.")
         if resource_type == "s3_bucket" and athena_lookup_attempted and not athena_query_activity:
             notes.append("Nenhum metadado relevante de query do Athena foi encontrado para este bucket no periodo consolidado.")
+        if (
+            resource_type == "s3_bucket"
+            and cloudtrail_s3_activity
+            and cloudtrail_s3_activity.get("lookup_status") == "no_matches"
+        ):
+            notes.append("Nenhum evento relevante de CloudTrail para este bucket foi encontrado nas datas-alvo da anomalia.")
         if notes:
             candidate_payload["notes"] = notes
         candidate_payload["score"] = _score_resource_with_context(candidate_payload)

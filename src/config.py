@@ -23,8 +23,9 @@ BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
 # Used by both the cost report and the Bedrock payload.
 # ============================================================
 
-ANALYSIS_DAYS = 7  # Inclusive analysis window size
-OFFSET_DAYS = 2    # Days to step back from today to the latest consolidated AWS day
+# Janela consolidada usada nas comparacoes do relatorio e no payload para a IA.
+ANALYSIS_DAYS = 7  # Quantos dias entram na janela consolidada.
+OFFSET_DAYS = 2    # Quantos dias voltar a partir de hoje para pegar o ultimo dia consolidado da AWS.
 
 # ============================================================
 # Cost Report Configuration
@@ -35,12 +36,12 @@ EXCLUDED_RECORD_TYPES = ['Credit', 'Refund', 'Tax']
 EXCLUDED_SERVICES = []  # Add services to exclude if needed
 
 # Thresholds and ranking for the cost report
-MIN_DAILY_COST_USD = 20.0
-MIN_PERCENT_VARIATION = 30.0
-MIN_ABSOLUTE_VARIATION_USD = 5.0
-TOP_N_SERVICES = 5
-TOP_N_DAILY_SERVICES = 10
-TOP_N_ANOMALIES = 10
+MIN_DAILY_COST_USD = 20.0  # Piso de custo diario para evitar enrich em ruido muito pequeno.
+MIN_PERCENT_VARIATION = 30.0  # Variacao percentual minima para considerar uma anomalia relevante.
+MIN_ABSOLUTE_VARIATION_USD = 5.0  # Variacao absoluta minima; util para futuros filtros e tuning de ruido.
+TOP_N_SERVICES = 5  # Quantos servicos destacar nos rankings principais do relatorio.
+TOP_N_DAILY_SERVICES = 10  # Quantos servicos mostrar por dia na serie do TXT.
+TOP_N_ANOMALIES = 10  # Quantas anomalias relevantes manter para enriquecimento e ranking interno.
 
 # Service-specific report handling
 SPECIAL_SERVICES = ["AWS End User Messaging", "End User Messaging"]
@@ -81,9 +82,9 @@ PDP_AUTOSCALING_GROUP_TAG_VALUES = [
 ENABLE_BEDROCK = False
 DEFAULT_BEDROCK_MODEL_ID = "amazon.nova-pro-v1:0"
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
-BEDROCK_MAX_TOKENS = 8000
-BEDROCK_TEMPERATURE = 0.2
-BEDROCK_MAX_ANALYSIS_ANOMALIES = 4
+BEDROCK_MAX_TOKENS = 8000  # Limite maximo de tokens de resposta do modelo; aumentar pode elevar custo e latencia.
+BEDROCK_TEMPERATURE = 0.2  # Baixa temperatura para respostas mais estaveis e menos criativas.
+BEDROCK_MAX_ANALYSIS_ANOMALIES = 4  # Quantas anomalias entram no payload compacto enviado ao Bedrock.
 BEDROCK_PRIORITY_METRIC_SERIES = {
     "AllRequests",
     "GroupDesiredCapacity",
@@ -100,10 +101,10 @@ BEDROCK_PRIORITY_METRIC_SERIES = {
 # Used by the Bedrock correlation layer and supporting discovery.
 # ============================================================
 
-MAX_CANDIDATE_RESOURCES = 25
-MAX_RESOURCES_PER_ANOMALY = 3
-MAX_S3_RESOURCES_PER_ANOMALY = 5
-EKS_PRIMARY_SCALING_METRIC = "GroupTotalInstances"
+MAX_CANDIDATE_RESOURCES = 25  # Limite bruto de candidatos por descoberta antes do ranking final.
+MAX_RESOURCES_PER_ANOMALY = 3  # Quantos recursos finais manter por anomalia na maioria dos casos.
+MAX_S3_RESOURCES_PER_ANOMALY = 5  # Reserva para S3 quando houver varios buckets candidatos com sinais parciais.
+EKS_PRIMARY_SCALING_METRIC = "GroupTotalInstances"  # Fonte principal de evidencia de scaling para EKS.
 
 # S3 request metric collection
 DEFAULT_S3_REQUEST_FILTER_ID = "all-objects"
@@ -112,11 +113,19 @@ S3_REQUEST_METRICS = [
 ]
 
 # CloudWatch Logs Insights query metadata
-LOGS_QUERY_METADATA_MAX_QUERIES = 5
-ATHENA_QUERY_METADATA_MAX_QUERIES = 3
-ATHENA_QUERY_METADATA_MAX_WORKGROUPS = 3
-CLOUDTRAIL_LOOKUP_WINDOW_HOURS = 2
-CLOUDTRAIL_MAX_MATCHES_PER_QUERY = 3
+LOGS_QUERY_METADATA_MAX_QUERIES = 5  # Quantas queries recentes de CloudWatch Logs anexar por log group.
+ATHENA_QUERY_METADATA_MAX_QUERIES = 3  # Quantas queries Athena relevantes anexar por bucket candidato.
+ATHENA_QUERY_METADATA_MAX_WORKGROUPS = 3  # Quantos workgroups Athena varrer para reduzir custo/latencia.
+CLOUDTRAIL_LOOKUP_WINDOW_HOURS = 2  # Janela de busca de CloudTrail ao redor de queries de Logs/Athena.
+CLOUDTRAIL_MAX_MATCHES_PER_QUERY = 3  # Quantos matches de CloudTrail guardar por query enriquecida.
+
+# Tuning do enriquecimento seletivo de CloudTrail para anomalias de S3.
+# Normalmente nao precisa ajuste; mexa apenas se houver muito ruido ou latencia.
+S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS = 40  # Teto bruto de eventos CloudTrail lidos por bucket antes de encerrar a busca.
+S3_CLOUDTRAIL_MAX_MATCHES = 5  # Quantos eventos exemplares entram no resumo final do bucket.
+S3_CLOUDTRAIL_MAX_SUMMARY_ITEMS = 3  # Quantos itens mostrar em rankings como top atores e top eventos.
+S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO = 1.05  # Gatilho minimo para consultar CloudTrail: hoje >= 105% da media.
+S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS = 2  # Permite olhar tambem o pico recente de AllRequests quando ele ocorreu ate 2 dias antes.
 
 # Messaging correlation metrics
 MESSAGING_SQS_METRICS = [

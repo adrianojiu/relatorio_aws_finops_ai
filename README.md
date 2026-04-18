@@ -369,6 +369,82 @@ Observações:
    - Picos de PDP e de autenticacao podem estar ligados a eventos de alta audiencia do Claro TV+; operacionalmente o ambiente costuma ser escalado cerca de 1 hora antes do inicio previsto desses eventos
    - Quando as tags forem pobres ou ausentes, ainda vale complementar o `PROJECT_CONTEXT.md` com o significado de negocio dos recursos
 
+## Parametros essenciais do `config.py`
+
+Nem toda variavel do `src/config.py` precisa ser ajustada no dia a dia. Abaixo estao as mais importantes para operacao e tuning.
+
+### Janela e sensibilidade
+
+- `ANALYSIS_DAYS`
+  Quantos dias entram na janela consolidada do relatorio. O padrao atual e `7`.
+- `OFFSET_DAYS`
+  Quantos dias voltar a partir de hoje para evitar usar um dia ainda nao consolidado pela AWS. O padrao atual e `2`.
+- `MIN_DAILY_COST_USD`
+  Piso de custo diario para evitar tratar ruido muito pequeno como anomalia relevante.
+- `MIN_PERCENT_VARIATION`
+  Variacao percentual minima para considerar uma anomalia para enriquecimento.
+- `TOP_N_ANOMALIES`
+  Quantas anomalias relevantes seguem para enriquecimento e ranking interno.
+
+Normalmente voce so mexe nesses parametros quando o relatorio estiver sensivel demais a ruido ou conservador demais.
+
+### Bedrock
+
+- `BEDROCK_MODEL_ID`
+  Modelo padrao usado quando `--enable-bedrock` estiver ativo e nao houver override por CLI ou env var.
+- `BEDROCK_MAX_TOKENS`
+  Limite de resposta do modelo. Aumentar pode trazer mais detalhe, mas tambem mais custo e latencia.
+- `BEDROCK_TEMPERATURE`
+  Controla o grau de variacao da resposta. O padrao baixo favorece analises mais consistentes.
+- `BEDROCK_MAX_ANALYSIS_ANOMALIES`
+  Quantas anomalias entram no payload compacto enviado ao Bedrock.
+
+### Correlacao e descoberta
+
+- `MAX_CANDIDATE_RESOURCES`
+  Limite bruto de candidatos avaliados por descoberta antes do ranking final.
+- `MAX_RESOURCES_PER_ANOMALY`
+  Quantos recursos finais manter por anomalia na maioria dos casos.
+- `MAX_S3_RESOURCES_PER_ANOMALY`
+  Reserva maior para S3 quando houver varios buckets candidatos.
+- `EKS_PRIMARY_SCALING_METRIC`
+  Metrica principal para leitura de scaling em EKS. O padrao e `GroupTotalInstances`.
+
+### CloudTrail e queries
+
+- `LOGS_QUERY_METADATA_MAX_QUERIES`
+  Quantas queries recentes de CloudWatch Logs anexar por log group.
+- `ATHENA_QUERY_METADATA_MAX_QUERIES`
+  Quantas queries Athena relevantes anexar por bucket candidato.
+- `ATHENA_QUERY_METADATA_MAX_WORKGROUPS`
+  Quantos workgroups Athena varrer no enriquecimento.
+- `CLOUDTRAIL_LOOKUP_WINDOW_HOURS`
+  Janela de busca de CloudTrail ao redor de queries de Athena e CloudWatch Logs.
+- `CLOUDTRAIL_MAX_MATCHES_PER_QUERY`
+  Quantos matches de CloudTrail guardar por query enriquecida.
+
+### CloudTrail seletivo para S3
+
+Esses parametros controlam o enriquecimento novo de CloudTrail para anomalias de S3. Na maioria dos casos, deixe o padrao.
+
+- `S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS`
+  Teto bruto de eventos lidos por bucket antes de encerrar a busca.
+- `S3_CLOUDTRAIL_MAX_MATCHES`
+  Quantos eventos exemplares entram no resumo final do bucket.
+- `S3_CLOUDTRAIL_MAX_SUMMARY_ITEMS`
+  Quantos itens mostrar em rankings como top eventos e top atores.
+- `S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO`
+  Gatilho minimo para consultar CloudTrail.
+  Exemplo: `1.05` significa consultar quando o valor de hoje estiver pelo menos 5% acima da media.
+- `S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS`
+  Permite olhar tambem o `peak_date` recente de `AllRequests` quando ele ocorreu alguns dias antes do dia de referencia.
+
+Quando faz sentido ajustar:
+
+- se houver muito ruido no resumo de CloudTrail, reduza `S3_CLOUDTRAIL_LOOKUP_MAX_EVENTS` ou `S3_CLOUDTRAIL_MAX_MATCHES`
+- se o lookup estiver conservador demais, reduza um pouco `S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO`
+- se o spike de requests costuma acontecer um pouco antes do custo, aumente `S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS` com cuidado
+
 Os relatórios serão salvos em `output/YYYY-MM-DD/`, agrupando todos os artefatos da execução do dia na mesma pasta.
 
 ---
@@ -379,6 +455,7 @@ Em uma execução típica, o projeto gera artefatos como:
 
 ```file system
 output/2026-04-09/relatorio_custos_2026-04-09.txt
+output/2026-04-09/relatorio_custos_2026-04-09.pdf
 output/2026-04-09/relatorio_custos_2026-04-09.xlsx
 output/2026-04-09/execucao_2026-04-09T08-47-11.log
 output/2026-04-09/execucao_2026-04-09T08-47-11.json
@@ -391,6 +468,7 @@ output/2026-04-09/relatorio_custos_2026-04-09_ai_meta.json
 ```
 
 Observações:
+- `relatorio_custos_YYYY-MM-DD.pdf` agora é gerado junto com o TXT principal e preserva o texto original, adicionando gráficos visuais de apoio para leitura mais intuitiva
 - `*_ai.txt`, `*_ai.pdf` e `*_ai_meta.json` só existem quando a análise Bedrock está habilitada e conclui a execução
 - `*_ai_error.txt` pode ser gerado quando houver falha na chamada ao modelo
 - `execucao_<timestamp>.log` é atualizado durante a execucao e ajuda a identificar a etapa exata de lentidao ou falha

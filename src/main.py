@@ -162,14 +162,27 @@ def _write_text_file(path, content):
         file_handle.write(content)
 
 
+def _read_text_file(path):
+    with open(path, "r", encoding="utf-8") as file_handle:
+        return file_handle.read()
+
+
 def _confirm_business_event_calendar_is_updated():
     """
     Fail closed when the operator cannot confirm that the business event calendar is current.
     """
     calendar_file = config.BUSINESS_EVENT_CALENDAR_FILE
+    color_reset = "\033[0m"
+    color_yellow = "\033[33m"
+    color_cyan = "\033[36m"
+    color_green = "\033[32m"
+    color_bold = "\033[1m"
+    color_underline = "\033[4m"
     prompt = (
-        "\nConfirmacao obrigatoria antes da execucao:\n"
-        f"Voce esta com uma versao atualizada do arquivo '{calendar_file}'? [s/N]: "
+        f"\n{color_bold}{color_yellow}Confirmacao obrigatoria antes da execucao:{color_reset}\n"
+        f"{color_cyan}Voce esta com uma versao atualizada do arquivo "
+        f"{color_green}{color_underline}'{calendar_file}'{color_reset}"
+        f"{color_cyan}? [s/N]: {color_reset}"
     )
 
     try:
@@ -375,6 +388,19 @@ def main():
                 media_sms_7d, enriched_anomalies, daily_top_services, account_label
             ),
         )
+        pdf_file = txt_file.replace(".txt", ".pdf")
+        execution_logger.run_step(
+            "write_main_pdf",
+            lambda: pdf_report.write_cost_report_pdf(
+                pdf_file,
+                _read_text_file(txt_file),
+                daily_costs=daily_costs,
+                top_costs=top_costs,
+                sms_por_dia=sms_por_dia,
+                account_label=account_label,
+            ),
+        )
+        print(f"Relatório PDF salvo em: {pdf_file}")
         execution_logger.run_step(
             "write_bedrock_context_txt",
             lambda: txt_report.write_bedrock_context_txt(txt_file, ultimo_dia, enriched_anomalies),
@@ -445,9 +471,10 @@ def main():
                     ai_pdf_file = txt_file.replace(".txt", "_ai.pdf")
                     execution_logger.run_step(
                         "write_ai_pdf",
-                        lambda: pdf_report.write_text_pdf(
+                        lambda: pdf_report.write_ai_analysis_pdf(
                             ai_pdf_file,
                             f"AI Analysis\n\n{ai_analysis}",
+                            report_data=report_data,
                             account_label=utils.get_aws_account_label(),
                         ),
                     )
