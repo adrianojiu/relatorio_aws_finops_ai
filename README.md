@@ -92,7 +92,10 @@ Para quem quer bater o olho e já executar sem ler tudo:
 
 5. **Arquivo de eventos Clarotv+**
    - `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`
-   - É recomendado copiar este arquivo para a pasta do projeto sempre antes da execução do relatório, isso deve manter o contexto de evento atualizado para a IA.
+   - A execucao do `run.py` agora pergunta obrigatoriamente se voce esta com uma versao atualizada desse arquivo antes de continuar.
+   - Se a resposta for negativa, vazia ou se nao houver confirmacao explicita, a execucao e cancelada.
+   - Em situacoes excepcionais ou automacoes, e possivel pular essa etapa com `--skip-calendar-confirmation`.
+   - Mantenha esse arquivo atualizado na pasta do projeto antes de rodar o relatorio para preservar a qualidade da correlacao de negocio.
    - Este arquivo é provido pelo time do claro tv e esta em um google drive do mesmo time.
 
 
@@ -263,7 +266,13 @@ Observações:
    ```
    Este e o exemplo mais completo de execucao e representa o modelo que tem apresentado melhor resultado no momento para a analise via Bedrock neste ambiente.
 
-13. **Exemplos de execução por provider suportado:**
+13. **Pular a confirmação da planilha de eventos em automações:**
+   ```bash
+   python3 run.py --source cost-explorer --skip-calendar-confirmation
+   ```
+   Use essa opcao apenas quando houver outro controle operacional garantindo que a planilha `prompts/assets/Régua de Pushs_SMS Now Online.xlsx` esta atualizada ou quando a execucao nao depender dessa confirmacao interativa.
+
+14. **Exemplos de execução por provider suportado:**
    Amazon Nova:
    ```bash
    python run.py --enable-bedrock --bedrock-model amazon.nova-pro-v1:0
@@ -285,7 +294,7 @@ Observações:
    python run.py --enable-bedrock --bedrock-model us.meta.llama3-3-70b-instruct-v1:0
    ```
 
-14. **Como listar modelos disponíveis no Bedrock:**
+15. **Como listar modelos disponíveis no Bedrock:**
    Listar todos:
    ```bash
    aws bedrock list-foundation-models --region us-east-1
@@ -305,7 +314,7 @@ Observações:
      --output table
    ```
 
-15. **Como listar inference profiles disponíveis:**
+16. **Como listar inference profiles disponíveis:**
    Um `inference profile` e uma forma de invocar certos modelos no Bedrock quando eles nao aceitam chamada direta por `modelId` sob o throughput padrao da conta.
    Na pratica, ele funciona como um identificador de acesso/roteamento gerenciado pela AWS para executar o modelo compativel naquele ambiente.
 
@@ -325,16 +334,18 @@ Observações:
      --output table
    ```
 
-16. **Quando usar `modelId` e quando usar `inferenceProfileId`:**
+17. **Quando usar `modelId` e quando usar `inferenceProfileId`:**
    - Use `modelId` direto quando o modelo suportar `ON_DEMAND`
    - Use `inferenceProfileId` ou ARN quando o modelo exigir `INFERENCE_PROFILE`
    - Se aparecer erro dizendo que `on-demand throughput isn’t supported`, troque para o `inferenceProfileId`
    - Em geral, modelos Anthropic mais novos no seu ambiente devem ser chamados por inference profile
 
-17. **Notas operacionais importantes:**
+18. **Notas operacionais importantes:**
    - O relatório sempre gera `*_bedrock_payload.json` e `*_bedrock_prompt.txt`, mesmo sem chamar o Bedrock
    - Se a chamada ao modelo falhar, o processo salva `*_ai_error.txt` no `output`
    - A execucao agora gera `execucao_<timestamp>.log` em tempo real e `execucao_<timestamp>.json` com o resumo estruturado da execucao
+   - Antes de iniciar a coleta, a execucao do `run.py` exige confirmacao interativa de que a planilha `prompts/assets/Régua de Pushs_SMS Now Online.xlsx` esta atualizada
+   - Essa confirmacao pode ser pulada explicitamente com `--skip-calendar-confirmation`
    - `BEDROCK_MAX_TOKENS` aumenta o limite da resposta; isso pode aumentar custo se o modelo realmente usar mais tokens
    - O provider e o tipo de throughput suportado variam por modelo e por conta AWS
    - `--aws-region` controla a região do workload, usada para CloudWatch e descoberta de recursos

@@ -161,6 +161,29 @@ def _write_text_file(path, content):
     with open(path, "w", encoding="utf-8") as file_handle:
         file_handle.write(content)
 
+
+def _confirm_business_event_calendar_is_updated():
+    """
+    Fail closed when the operator cannot confirm that the business event calendar is current.
+    """
+    calendar_file = config.BUSINESS_EVENT_CALENDAR_FILE
+    prompt = (
+        "\nConfirmacao obrigatoria antes da execucao:\n"
+        f"Voce esta com uma versao atualizada do arquivo '{calendar_file}'? [s/N]: "
+    )
+
+    try:
+        answer = input(prompt).strip().lower()
+    except EOFError as exc:
+        raise RuntimeError(
+            "Nao foi possivel confirmar a atualizacao da planilha de eventos/push em modo nao interativo."
+        ) from exc
+
+    if answer not in {"s", "sim", "y", "yes"}:
+        raise RuntimeError(
+            "Execucao cancelada: confirme a atualizacao da planilha de eventos/push antes de gerar o relatorio."
+        )
+
 def main():
     parser = argparse.ArgumentParser(description="Generate AWS Cost Reports")
     parser.add_argument("--source", choices=["cost-explorer", "csv"], default="cost-explorer",
@@ -171,6 +194,11 @@ def main():
     parser.add_argument("--cost-explorer-region", help="Override the AWS Cost Explorer region for this execution")
     parser.add_argument("--bedrock-region", help="Override the Bedrock region for this execution")
     parser.add_argument("--enable-bedrock", action="store_true", help="Enable Bedrock AI analysis")
+    parser.add_argument(
+        "--skip-calendar-confirmation",
+        action="store_true",
+        help="Skip the interactive confirmation about the business event calendar spreadsheet",
+    )
     parser.add_argument(
         "--bedrock-model",
         help="Override the Bedrock model ID for this execution",
@@ -199,6 +227,20 @@ def main():
     ultimo_dia = None
 
     try:
+        if args.skip_calendar_confirmation:
+            execution_logger.run_step(
+                "confirm_business_event_calendar",
+                lambda: print(
+                    "Skipping business event calendar confirmation because "
+                    "--skip-calendar-confirmation was provided."
+                ),
+            )
+        else:
+            execution_logger.run_step(
+                "confirm_business_event_calendar",
+                _confirm_business_event_calendar_is_updated,
+            )
+
         data_inicio, data_fim, ultimo_dia = execution_logger.run_step(
             "analysis_period",
             utils.get_analysis_period,

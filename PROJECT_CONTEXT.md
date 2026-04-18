@@ -189,6 +189,14 @@ Arquivos esperados por execucao:
 
 Quando o relatorio TXT final for gerado, o artefato `*_execution_log.json` pode continuar existindo como visao associada diretamente ao relatorio.
 
+Antes de iniciar a coleta principal, a execucao do `run.py` deve pedir confirmacao explicita de que a planilha `prompts/assets/Régua de Pushs_SMS Now Online.xlsx` esta atualizada.
+
+Regra operacional:
+
+- se a confirmacao for negativa, vazia ou indisponivel, a execucao deve ser cancelada
+- em situacoes excepcionais ou automacoes controladas, a etapa pode ser pulada com `--skip-calendar-confirmation`
+- o objetivo e evitar analise com calendario de negocio desatualizado
+
 ## Regras gerais de implementacao
 
 Preferencias estruturais:
