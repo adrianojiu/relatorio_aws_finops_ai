@@ -1,96 +1,156 @@
-Analise o relatorio de custos AWS fornecido e identifique possiveis causas de variacoes de custo.
+Analise o relatorio de custos AWS fornecido e identifique as causas mais provaveis das variacoes de custo.
 
 Objetivo:
-- Explicar os principais drivers de custo do dia de referencia em comparacao com a janela consolidada.
-- Relacionar anomalias de custo com recursos AWS e comportamento operacional.
-- Distinguir hipoteses fortes de hipoteses fracas.
-- Distinguir anomalia real de desvio esperado e de efeito em cascata.
-- Sugerir recomendacoes objetivas de investigacao e otimizacao.
 
-Foco da analise:
-- Servicos e usage types com variacao relevante na janela.
-- Correlacao entre anomalias, recursos AWS candidatos e metricas associadas.
-- Possiveis efeitos em cascata entre servicos.
-- Casos compativeis com streaming, envio de SMS, autenticacao, processamento de dados e filas.
+- explicar os principais drivers de custo do dia de referencia em comparacao com a janela consolidada
+- relacionar anomalias de custo com recursos AWS e comportamento operacional
+- distinguir hipoteses fortes de hipoteses fracas
+- distinguir `anomalia real`, `desvio esperado` e `efeito em cascata`
+- sugerir recomendacoes objetivas de investigacao e otimizacao
 
-Formato esperado da resposta:
+## Selecao dos drivers
+
+Foque em:
+
+- servicos e usage types com variacao relevante na janela
+- correlacao entre anomalias, recursos AWS candidatos e metricas associadas
+- efeitos em cascata entre servicos
+- casos compativeis com streaming, autenticacao, autorizacao, processamento de dados, filas e envio de SMS
+
+Priorize apenas os itens realmente relevantes.
+
+- Se houver apenas 1 ou 2 drivers fortes, nao force 4 itens.
+- Se um detalhe tecnico nao mudar decisao, classificacao ou proximo passo, nao inclua.
+- Nao transforme regras gerais do contexto do projeto em recomendacoes do dia sem evidencia concreta no payload.
+- Nao gere recomendacoes de observabilidade para recursos que nao entraram na analise final.
+
+## Regras de classificacao
+
+Para cada item, classifique explicitamente como:
+
+- `anomalia real`
+- `desvio esperado`
+- `efeito em cascata`
+
+Use `anomalia real` somente quando houver comportamento inesperado, potencialmente evitavel, erro, desperdicio, falha, investigacao necessaria ou sinal operacional atipico.
+
+Use `desvio esperado` quando houver variacao relevante, mas compativel com o comportamento normal do ambiente, da carga ou do modelo operacional.
+
+Use `efeito em cascata` quando o servico nao for o driver primario e apenas refletir aumento ou reducao provocado por outro componente.
+
+Nao force todos os itens a serem anomalias.
+
+## Regras gerais de inferencia
+
+- Nao afirme que um recurso especifico explicou o custo principal sem evidencia dominante e direta no payload.
+- Se houver apenas correlacao indireta ou mais de um candidato plausivel, use formulacoes como `candidato principal`, `hipotese mais provavel` ou `evidencia parcial`.
+- Nao invente metricas diarias, picos ou relacoes causais que nao estejam evidentes no payload.
+- Quando faltar dado, diga isso de forma objetiva.
+- Destaque quando houver correlacao entre um recurso e custo em outros servicos.
+- Se houver uma secao consolidada de causalidade, inclua apenas drivers primarios e efeitos em cascata diretamente ligados.
+- Nao misture nessa secao eventos paralelos de investigacao, como queries ad-hoc de CloudWatch Logs, sem evidencia de relacao causal com o mesmo fluxo.
+
+## Regras de serie temporal e linguagem
+
+- Nao use a expressao `anchor day`; prefira `dia de referencia` ou a data absoluta.
+- Antes de afirmar que o dia de referencia foi o maior custo da janela, confirme explicitamente se ele e de fato o maximo da serie diaria consolidada.
+- Se nao for o maior custo da janela, cite a data e o valor do verdadeiro pico semanal.
+- Nao extrapole um pico de alguns servicos para dizer que o custo total do dia foi o maior da semana sem confirmar isso na serie diaria total.
+
+## Regras por dominio
+
+### EKS e EC2 Compute
+
+- Para `EC2 Compute`, confira se o tipo de instancia observado no nodegroup candidato combina com o `usage_type` do custo antes de atribuir causalidade principal.
+- Se o payload trouxer `observed_instance_types` para um ASG, use essa informacao como filtro forte de causalidade.
+- Se o `usage_type` nao combinar com o tipo de instancia observado do nodegroup, nao trate esse nodegroup como driver principal; no maximo como candidato secundario.
+- Para scaling em EKS, priorize `GroupTotalInstances` como evidencia principal; use `GroupDesiredCapacity` e `GroupInServiceInstances` apenas como apoio.
+- Se `min_value` e `peak_value` estiverem disponiveis, use a faixa real observada na janela.
+- Se federate, pdp, access ou app aparecerem com metricas de scaling, cite explicitamente quais tiveram ou nao tiveram scaling relevante.
+- Em ambiente CIAM, quando houver contexto de evento do Claro TV+ e candidatos no cluster `prd-sso-ciam`, priorize `ping_pdp` como hipotese principal apenas se houver evidencia compativel de scaling e tipo de instancia aderente ao `usage_type`.
+- Nao conclua que `prd-sso-fachada` foi o driver principal de `EC2 Compute` apenas porque houve scaling de poucas instancias se o payload trouxer sinais mais aderentes em `ping_pdp` ou outro nodegroup.
+
+### Eventos e push do Claro TV+
+
+- Use calendario de eventos e push apenas como contexto de negocio para aumento de plays, autenticacao, autorizacao, trafego e scaling agendado.
+- Nunca use esse calendario como evidencia direta de volume, contagem ou custo de AWS End User Messaging/SMS.
+- Quando houver push relevante no mesmo dia e proximidade horaria com scaling ou aumento de trafego, trate essa correlacao como hipotese forte de negocio para EKS, load balancer, Transit Gateway e Ping Directory.
+- Quando houver evento sem push, trate isso como contexto secundario.
+- Quando houver eventos ou push candidatos no payload, prefira citar nome, horario, alcance e nodes quando disponiveis.
+- Se houver mais de um evento plausivel, cite os principais candidatos e deixe claro que nao sao prova causal unica.
+- Se nao houver calendario suficiente no payload, use formulacao generica sobre padrao de streaming ou scaling agendado.
+
+### Ping Directory
+
+- Trate a instancia `quaternary` como recurso de backup, relatorios e limpeza fora do balanceamento.
+- Nao a use como explicacao principal para compute de EKS.
+- Nao trate `NetworkOut` alto da `quaternary` como anomalia por si so quando o contexto indicar backup.
+
+### S3 e GuardDuty
+
+- Para GuardDuty S3 Data Events, entregue a causa mais provavel do spike apontando bucket lider somente quando houver `AllRequests` destacado para esse bucket no payload.
+- Para anomalias de S3 ou GuardDuty, use `AllRequests` como evidencia principal de pico de bucket.
+- Nunca use tamanho do bucket, numero de objetos, score interno ou contexto operacional sozinho como prova de que ele causou o spike.
+- Sem `AllRequests`, trate o bucket apenas como candidato.
+- Mesmo com `AllRequests`, so trate o bucket como causador do spike se a data do pico ou um aumento material coincidir com a data do spike de custo.
+- Se apenas um bucket estiver instrumentado e os demais nao, use linguagem de candidato principal ou evidencia parcial.
+- Com apenas `AllRequests`, fale apenas em aumento de requisicoes; nao infira `PUT`, `GET`, `LIST`, `COPY` ou `DELETE` sem metricas especificas.
+- Se o payload trouxer `s3_request_filter_id` mas nao trouxer valores de requests ou erros, trate isso como problema de observabilidade ou coleta automatizada e nao recomende "ativar metricas" sem ressalva.
+- Se um bucket nao tiver `all-objects`, mas trouxer outro `s3_request_filter_id` com metricas de requests, use esse filtro normalmente.
+- Nao atribua funcao de negocio a bucket desconhecido apenas pelo nome; so faca isso quando houver `derived_context` ou `notes` explicitos.
+- Quando houver buckets candidatos relevantes sem `AllRequests` observavel no payload, recomende habilitar `S3 Request Metrics` com filtro de bucket inteiro, por exemplo `all-objects`.
+- Se o bucket ja trouxer `s3_request_filter_id`, trate isso como indicio de configuracao existente; sem evidencia adicional, nao afirme que a metrica esta desabilitada.
+
+### Athena em contexto de S3
+
+- Se o payload trouxer `athena_query_activity` para um bucket S3, use essas queries apenas como evidencia complementar.
+- Prefira citar `data_scanned_bytes`, `submission_time`, `workgroup`, `database` e o tipo de match com o bucket.
+- Quando houver `cloudtrail_matches`, use esse resumo para identificar quem executou a query e qual a confianca do match.
+- Se houver queries Athena relevantes no mesmo periodo, explique que elas podem ter contribuido para aumentar eventos S3 analisados pelo GuardDuty, mas nao substituem a evidencia principal de `AllRequests`.
+
+### SMS
+
+- Se houver metricas de SQS no payload para SMS, use `NumberOfMessagesSent` e `NumberOfMessagesReceived` como evidencia operacional principal de aumento ou reducao de trafego.
+- Use `ApproximateAgeOfOldestMessage` ou `ApproximateNumberOfMessagesVisible` como sinais de backlog ou falha.
+- Se o payload trouxer `complementary_usage_types` para SMS, use `OutboundSMS ... MessageCount` e `DeliveryAttempts-SMS` como evidencia complementar do Cost Explorer.
+- Para SMS, trate os usage types complementares como apoio e as filas SQS como evidencia operacional principal.
+- Se houver divergencia entre Cost Explorer e SQS, explicite a incerteza.
+- So trate SMS como `anomalia real` quando houver evidencias de fallback excessivo, falha, retries, backlog, mudanca anormal de mix de canais ou comportamento desproporcional.
+- Crescimento organico de volume tende a `desvio esperado`.
+
+### Transit Gateway, LCU e NAT Gateway
+
+- Para Transit Gateway, use `BytesIn` e `BytesOut` como evidencia principal de aumento real de trafego.
+- Sem essas metricas, trate a analise como correlacao indireta.
+- Para LCU, Transit Gateway e outros servicos de rede, prefira `desvio esperado` ou `efeito em cascata` quando o comportamento acompanhar trafego legitimo, scaling agendado ou evento conhecido.
+- Para NAT Gateway, nao relacione streaming, autenticacao ou backup sem coincidencia clara entre datas de scaling, rede e o pico do NAT.
+
+### CloudWatch Logs `DataScanned-Bytes`
+
+- Use primeiro `query_activity` quando estiver presente no payload: `query_id`, `query_definition_name`, `query_definition_id`, `log_groups`, `bytes_scanned`, `create_time` e `execution_origin`.
+- Quando `query_activity` trouxer `cloudtrail_matches`, use esse resumo para identificar quem executou a query, se foi role, usuario ou automacao, e qual a confianca desse match.
+- Se houver `cloudtrail_matches` validos, prefira citar o ator identificado e a origem aproximada da execucao.
+- Se `execution_origin` vier como `unknown`, diga explicitamente que a API nao permitiu concluir se a query foi manual, agendada ou disparada por outra automacao.
+- Quando o dia de referencia mostrar normalizacao apos um pico anterior, nao chame isso de anomalia principal do dia; trate como evento separado ou contexto historico relevante.
+- Nao trate a anomalia como relacionada ao GuardDuty sem evidencia direta nas queries ou no payload.
+
+## Formato obrigatorio da resposta
+
 - Entregue uma resposta executiva, curta e objetiva.
 - Mire em no maximo 500 a 700 palavras no total.
 - Evite introducoes longas, repeticoes, contexto historico excessivo e reescrita do payload.
 - Resuma primeiro os achados mais provaveis em no maximo 5 bullets curtos.
 - Depois apresente somente os itens mais importantes enviados no payload, priorizando no maximo 4 itens.
-- Use exatamente esta estrutura:
-  1. `Resumo executivo`
-  2. `Principais drivers`
-  3. `Recomendacoes`
-  4. `ANALISE CONCLUIDA`
 - Em `Resumo executivo`, entregue bullets curtos, orientados a decisao, sem repetir detalhes tecnicos.
 - Em `Principais drivers`, limite cada item a 4 linhas curtas: classificacao, causa provavel, evidencias principais e confianca.
 - Em `Recomendacoes`, entregue no maximo 3 acoes praticas e objetivas.
-- Se houver apenas 1 ou 2 drivers realmente relevantes, nao force 4 itens.
-- Se um detalhe tecnico nao mudar decisao, classificacao ou proximo passo, nao inclua.
-- Nao afirme que um recurso especifico "puxou" ou "explicou" o custo principal sem evidencia dominante e direta no payload.
-- Se houver apenas correlacao indireta ou mais de um candidato plausivel, use formulacoes como `candidato principal`, `hipotese mais provavel` ou `evidencia parcial`.
-- Para `EC2 Compute`, confira se o tipo de instancia observado no nodegroup candidato combina com o `usage_type` do custo antes de atribuir causalidade principal.
-- Se o payload trouxer `observed_instance_types` para um ASG, use essa informacao como filtro forte de causalidade.
-- Se o `usage_type` nao combinar com o tipo de instancia observado do nodegroup, nao trate esse nodegroup como driver principal do custo; no maximo como candidato secundario.
-- Nao gere recomendacoes de observabilidade para servicos ou recursos que nao estejam entre os itens efetivamente analisados no payload selecionado para a resposta.
-- Nao transforme regras gerais do contexto do projeto em recomendacoes do dia se o payload do dia nao trouxer evidencias concretas daquele gap.
-- Para cada item, classifique explicitamente como `anomalia real`, `desvio esperado` ou `efeito em cascata`.
-- Use `anomalia real` somente quando houver comportamento inesperado, potencialmente evitavel, erro, desperdicio, falha, investigacao necessaria ou sinal operacional atipico.
-- Use `desvio esperado` quando houver variacao relevante, mas compativel com o comportamento normal do ambiente, da carga ou do modelo operacional.
-- Use `efeito em cascata` quando o servico nao for o driver primario e apenas refletir aumento ou reducao provocado por outro componente.
-- Nao force todos os itens a serem anomalias; se o comportamento for esperado ou consequencia de outro driver, diga isso explicitamente.
-- Para cada item, seja objetivo: classificacao, causa provavel, evidencias principais, correlacoes e nivel de confianca.
-- Nao use a expressao "anchor day" na resposta; prefira "dia de referencia" ou a data absoluta.
-- Antes de afirmar que o dia de referencia foi o maior custo, pico da semana, maior valor da janela ou equivalente, confira explicitamente se ele e de fato o maximo da serie diaria consolidada.
-- Se o dia de referencia nao for o maior custo da janela, diga isso de forma objetiva e cite a data e o valor do verdadeiro pico semanal.
-- Nao extrapole um pico de alguns servicos para dizer que o custo total do dia foi o maior da semana sem confirmar isso na serie diaria total.
-- Destaque quando houver correlacao entre um recurso e custo em outros servicos.
-- Limite a resposta ao essencial e evite repetir series completas quando os dados ja estiverem claros.
-- Nao invente metricas diarias, picos ou relacoes causais que nao estejam evidentes no payload; quando faltar dado, diga isso de forma objetiva.
-- Para compute em EKS, priorize a metrica `GroupTotalInstances` como evidencia principal de quantas instancias estiveram em uso; use `GroupDesiredCapacity` e `GroupInServiceInstances` apenas como apoio.
-- Se federate, pdp, access ou app aparecerem com metricas de scaling no payload, cite explicitamente quais deles tiveram ou nao tiveram scaling relevante.
-- Para scaling de EKS, use preferencialmente a faixa real observada na janela quando `min_value` e `peak_value` estiverem disponiveis; evite resumir como se fosse apenas um movimento fixo entre o primeiro e o ultimo dia.
-- Para NAT Gateway, nao relacione streaming, autenticacao ou backup sem coincidencia clara entre datas de scaling/rede e o pico do NAT.
-- Para Ping Directory, trate a instancia quaternaria como recurso de backup/relatorios fora do balanceamento; nao a use como explicacao principal para compute de EKS e nao trate seu NetworkOut como anomalia por si so quando o contexto indicar backup.
-- Para GuardDuty S3 Data Events, entregue a causa mais provavel do spike apontando o bucket lider somente quando houver `AllRequests` destacado para esse bucket no payload.
-- Para anomalias de S3 ou GuardDuty, use `AllRequests` como evidencia principal de pico de bucket.
-- Se o payload trouxer `athena_query_activity` para um bucket S3, use essas queries do Athena como evidencia complementar, nunca como prova principal isolada.
-- Quando houver `athena_query_activity`, prefira citar `data_scanned_bytes`, `submission_time`, `workgroup`, `database` e o tipo de match com o bucket para reforcar a explicacao do spike.
-- Quando `athena_query_activity` trouxer `cloudtrail_matches`, use esse resumo para identificar quem executou a query do Athena, se foi role, usuario ou automacao, e qual a confianca desse match.
-- Se houver queries Athena relevantes no mesmo periodo, explique que elas podem ter contribuido para aumentar eventos S3 analisados pelo GuardDuty, mas deixe claro que isso e uma correlacao complementar ao bucket lider e nao substitui a evidencia principal de `AllRequests`.
-- Para anomalias de S3 ou GuardDuty, nunca use tamanho do bucket, numero de objetos, score interno ou contexto operacional sozinho como prova de que ele foi o causador do spike; sem `AllRequests`, trate o bucket apenas como candidato.
-- Mesmo quando um bucket tiver `AllRequests`, so o trate como causador do spike se a data do pico ou um aumento material coincidir com a data do spike de custo; se o bucket tiver metricas mas o pico estiver em outro dia, trate-o apenas como candidato ou evidencia parcial.
-- Nao infira tipos especificos de operacao S3, como PUT, GET, LIST, COPY ou DELETE, a menos que essas metricas especificas estejam presentes no payload. Com apenas `AllRequests`, fale apenas em aumento de requisicoes.
-- Se o payload trouxer `s3_request_filter_id` para um bucket mas nao trouxer valores de requests/erros, trate isso como problema de observabilidade/coleta automatizada e nao recomende "ativar metricas" sem ressalva.
-- Se um bucket nao tiver `all-objects`, mas o payload trouxer outro `s3_request_filter_id` com metricas de requests, use esse filtro normalmente; o importante e haver requests observaveis no payload.
-- Nao atribua funcao de negocio a bucket S3 desconhecido apenas pelo nome; so faca isso quando houver `derived_context` ou `notes` explicitos no payload.
-- Se houver metricas de SQS no payload para SMS, use `NumberOfMessagesSent` e `NumberOfMessagesReceived` como evidencia principal de aumento ou reducao de trafego, e `ApproximateAgeOfOldestMessage` ou `ApproximateNumberOfMessagesVisible` como sinais de backlog ou falha.
-- Se o payload trouxer `complementary_usage_types` para SMS, use especialmente `OutboundSMS ... MessageCount` e `DeliveryAttempts-SMS` como evidencias complementares do Cost Explorer para validar se o custo acompanhou volume real de mensagens ou tentativas adicionais.
-- Para SMS, trate os usage types complementares do Cost Explorer como apoio e as filas SQS como evidencia operacional principal; se houver divergencia entre eles, explicite essa incerteza.
-- Se o payload trouxer calendario de eventos/push do Claro TV+, use-o apenas como contexto de negocio para aumento de plays, autenticacao, autorizacao, trafego e scaling agendado, principalmente no `prd-sso-ciam` e no Ping Directory.
-- Nunca use calendario de eventos/push do Claro TV+ como evidencia direta de volume, contagem ou custo de AWS End User Messaging/SMS.
-- Quando houver push relevante no mesmo dia e proximidade horaria com scaling ou aumento de trafego, trate essa correlacao como hipotese forte de negocio para EKS, load balancer, Transit Gateway e Ping Directory.
-- Quando houver evento sem push, trate isso como contexto secundario; o sinal mais forte de aumento de plays vem do push.
-- Quando houver eventos/push candidatos no payload, prefira citar quais eventos provavelmente explicam o scaling, usando nome, horario, alcance e nodes quando disponiveis, em vez de usar apenas frases genericas como "evento de streaming".
-- Se houver mais de um evento plausivel no mesmo dia, cite os principais candidatos e deixe claro que sao eventos candidatos, nao uma prova causal unica.
-- Se nao houver calendario de eventos suficiente no payload, ai sim use formulacao generica sobre padrao de streaming ou scaling agendado.
-- Para `EC2 Compute` em ambiente CIAM, quando houver contexto de evento/push do Claro TV+ e candidatos no cluster `prd-sso-ciam`, priorize `ping_pdp` como hipotese principal apenas se houver evidencia compativel de scaling/ocupacao e tipo de instancia aderente ao `usage_type`.
-- Nao conclua que `prd-sso-fachada` foi o driver principal de `EC2 Compute` apenas porque houve scaling de poucas instancias, se o payload tambem mostrar sinais relevantes em `ping_pdp` ou outro nodegroup mais aderente ao contexto e ao tipo de instancia.
-- Para LCU, Transit Gateway e outros servicos de rede, prefira classificar como `desvio esperado` ou `efeito em cascata` quando o comportamento acompanhar claramente aumento legitimo de trafego, scaling agendado ou evento conhecido.
-- Para SMS, so trate como `anomalia real` se houver evidencias de fallback excessivo, falha, retries, backlog, mudanca anormal de mix de canais ou comportamento desproporcional; crescimento organico de volume deve tender a `desvio esperado`.
-- Para CloudWatch Logs `DataScanned-Bytes`, quando o dia de referencia mostrar normalizacao apos um pico anterior, nao chame isso de anomalia principal do dia; trate como evento separado ou contexto historico relevante.
-- Para Transit Gateway, use `BytesIn` e `BytesOut` como evidencia principal de aumento real de trafego; sem essas metricas, trate a analise como correlacao indireta.
-- Para CloudWatch Logs `DataScanned-Bytes`, use primeiro `query_activity` quando estiver presente no payload: `query_id`, `query_definition_name`, `query_definition_id`, `log_groups`, `bytes_scanned`, `create_time` e `execution_origin`.
-- Quando `query_activity` trouxer `cloudtrail_matches`, use esse resumo para identificar quem executou a query, se foi role, usuario ou automacao, e qual a confianca desse match.
-- Se houver `cloudtrail_matches` validos, prefira citar o ator identificado e a origem aproximada da execucao em vez de dizer apenas que a origem e `unknown`.
-- Para CloudWatch Logs `DataScanned-Bytes`, nao trate a anomalia como relacionada ao GuardDuty sem evidencia direta nas queries ou no payload; sem essa evidencia, mantenha as analises separadas.
-- Se `execution_origin` vier como `unknown`, diga explicitamente que a API nao permitiu concluir se a query foi manual, agendada ou disparada por outra automacao.
-- Se houver uma secao consolidada de causalidade, inclua nela apenas drivers primarios e efeitos em cascata diretamente ligados; nao misture nela eventos paralelos de investigacao, como queries ad-hoc de CloudWatch Logs, a menos que haja evidencia de relacao causal com o mesmo fluxo.
-- Finalize com recomendacoes praticas e proximos passos de verificacao, qual seria a solução ou o caminho para a otimizacão.
-- Quando houver buckets candidatos relevantes sem `AllRequests` no payload, inclua como recomendacao habilitar S3 Request Metrics com filtro de bucket inteiro, por exemplo `all-objects`, nos buckets mais importantes para permitir identificacao futura do bucket causador.
-- So recomende habilitar `S3 Request Metrics` quando o payload do dia trouxer explicitamente bucket candidato de S3/GuardDuty sem `AllRequests` observavel.
-- Se o bucket ja trouxer `s3_request_filter_id`, trate isso como indicio de configuracao existente; sem evidencia adicional, nao afirme que a metrica esta desabilitada.
-- Caso tenham algum spike me entregue a causa.
-- Coloque uma marcação de fim de resposta clara, como "ANALISE CONCLUIDA", para evitar que uma resposta seja truncada e não percebida.
+- Finalize com uma marca clara de fim de resposta.
+
+Use exatamente esta estrutura:
+
+1. `Resumo executivo`
+2. `Principais drivers`
+3. `Recomendacoes`
+4. `ANALISE CONCLUIDA`
+
+Caso exista spike relevante, entregue a causa mais provavel com o nivel de confianca adequado.
