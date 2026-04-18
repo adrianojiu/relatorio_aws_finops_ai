@@ -1,4 +1,5 @@
 # Contexto do Projeto
+
 se você é uma IA e esta lendo isso, estas são as definições de contexto deste projeto, são importantes para entender definições ja tabalhadas e decididas, este arquivo pode te ajuda a entender melhor o projeto, alem do codigo e readme.
 Este arquivo consolida o contexto operacional, as regras de implementacao e as decisoes praticas do projeto `relatorio_aws_finops_ai`.
 
@@ -9,6 +10,7 @@ O objetivo e evitar perda de contexto entre sessoes e facilitar manutencao futur
 Este arquivo deve ser consultado antes de propor ou implementar mudancas relevantes no projeto.
 
 Sempre que houver alteracao de:
+
 - especificacao funcional
 - regra de correlacao
 - formato de relatorio
@@ -19,6 +21,7 @@ Sempre que houver alteracao de:
 deve-se atualizar este arquivo para manter o contexto do projeto sincronizado.
 
 Se houver divergencia entre implementacao e este arquivo:
+
 - a implementacao deve ser revisada
 - e este arquivo deve ser atualizado se a regra correta tiver mudado
 
@@ -27,12 +30,14 @@ Se houver divergencia entre implementacao e este arquivo:
 Evitar hardcoded sempre que possivel.
 
 Preferencias do projeto:
+
 - tudo que for configuracao executavel, lista de recursos conhecidos, filtro, limite, nome relevante ou comportamento ajustavel deve ser parametrizado
 - a preferencia de parametrizacao tecnica e no `config.py`
 - contexto de negocio, interpretacao operacional e decisoes historicas devem viver neste `PROJECT_CONTEXT.md`
 - descoberta tecnica dinamica deve continuar vindo da AWS quando fizer sentido
 
 Exemplos que devem preferencialmente ficar em `config.py`:
+
 - buckets conhecidos
 - filas conhecidas
 - filtros de metricas
@@ -40,6 +45,7 @@ Exemplos que devem preferencialmente ficar em `config.py`:
 - nomes ou roles de recursos conhecidos
 
 Exemplos que devem preferencialmente ficar neste `PROJECT_CONTEXT.md`:
+
 - contexto operacional do ambiente
 - explicacoes de causalidade
 - comportamento esperado de eventos
@@ -50,6 +56,7 @@ Nao espalhar definicoes de negocio em varios arquivos quando elas puderem ficar 
 ## Regra de Documentacao
 
 Sempre que houver mudanca relevante em:
+
 - uso do projeto
 - parametros de execucao
 - arquivos gerados
@@ -61,6 +68,7 @@ Sempre que houver mudanca relevante em:
 o `README.md` deve ser revisado e atualizado.
 
 O projeto deve manter coerencia entre:
+
 - codigo
 - `README.md`
 - `AGENTS.md`
@@ -69,6 +77,7 @@ O projeto deve manter coerencia entre:
 ## Objetivo
 
 Gerar um relatorio diario de custos AWS com:
+
 - consolidacao de custos da janela analisada
 - identificacao de anomalias por `service` e `usage_type`
 - correlacao com recursos AWS reais
@@ -76,6 +85,7 @@ Gerar um relatorio diario de custos AWS com:
 - analise causal via Amazon Bedrock
 
 Saidas principais:
+
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.xlsx`
 - `output/YYYY-MM-DD/execucao_<timestamp>.log`
@@ -98,6 +108,7 @@ O projeto trata regioes separadamente.
   Uso: Bedrock.
 
 No caso deste ambiente:
+
 - workloads podem estar em `sa-east-1`
 - Cost Explorer costuma ser usado em `us-east-1`
 - Bedrock costuma ser usado em `us-east-1`
@@ -111,6 +122,7 @@ Nao voltar para uma unica regiao compartilhada para tudo.
 - Se o alias da conta nao estiver disponivel, o fallback deve usar `AWS_PROFILE + account id`.
 
 Exemplo esperado:
+
 - `Custo de Cloud AWS conta prd-ciam (123456789012)`
 
 ## Janela de Analise
@@ -119,14 +131,17 @@ Exemplo esperado:
 - `OFFSET_DAYS = 2`
 
 Importante:
+
 - o relatorio nao analisa "hoje"
 - ele analisa o ultimo dia consolidado da AWS, com atraso de 2 dias
 
 Na resposta da IA, preferir:
+
 - `dia de referencia`
 - ou a data absoluta
 
 Evitar:
+
 - `anchor day`
 - `hoje`
 
@@ -135,6 +150,7 @@ Evitar:
 O TXT principal deve ficar limpo e orientado a leitura humana.
 
 Deve conter:
+
 - cabecalho com conta AWS
 - custo medio por dia
 - custos por dia na janela com grafico textual
@@ -146,14 +162,17 @@ Deve conter:
 - top 5 servicos por dia na janela
 
 Nao deve conter:
+
 - dump tecnico completo de correlacao Bedrock
 
 Esse contexto tecnico foi movido para:
+
 - `*_bedrock_context.txt`
 
 ## Arquivos de Bedrock
 
 Separacao atual:
+
 - TXT principal: foco executivo
 - `*_bedrock_context.txt`: apoio tecnico de correlacao
 - `*_bedrock_payload.json`: payload real enviado para a IA
@@ -170,6 +189,7 @@ Os artefatos de cada execucao devem ficar agrupados em uma subpasta por data den
 A resposta da IA em `*_ai.txt` e `*_ai.pdf` deve ser executiva e objetiva.
 
 Preferencias atuais:
+
 - abrir com um resumo executivo curto
 - destacar apenas os drivers realmente relevantes do dia de referencia
 - limitar os principais drivers a poucos itens
@@ -177,6 +197,7 @@ Preferencias atuais:
 - evitar recontar todo o payload, repetir series completas ou reescrever contexto ja evidente
 
 Se um detalhe tecnico nao mudar:
+
 - classificacao
 - causa provavel
 - confianca
@@ -189,11 +210,13 @@ ele nao deve aparecer na resposta final da IA.
 A observabilidade da execucao deve registrar eventos em tempo real no console e tambem em arquivo dedicado dentro de `output/YYYY-MM-DD/`.
 
 Objetivos:
+
 - identificar em qual etapa a execucao falhou
 - identificar em qual etapa a execucao ficou lenta
 - manter rastreabilidade mesmo quando o TXT principal nao for gerado
 
 Arquivos esperados por execucao:
+
 - `execucao_<timestamp>.log` para acompanhamento em tempo real
 - `execucao_<timestamp>.json` para consolidacao estruturada do fluxo
 
@@ -204,10 +227,12 @@ Quando o relatorio TXT final for gerado, o artefato `*_execution_log.json` pode 
 ### 1. Evitar hardcode desnecessario
 
 Sempre que possivel:
+
 - colocar configuracao executavel no `config.py`
 - nao espalhar listas de buckets, filas, filtros e nomes no codigo
 
 Exemplos:
+
 - contexto de buckets S3
 - contexto de filas SQS
 - metricas priorizadas
@@ -216,12 +241,14 @@ Exemplos:
 ### 2. Se for contexto de negocio, preferir documentacao
 
 Preferir `PROJECT_CONTEXT.md` para:
+
 - contexto operacional
 - contexto de negocio
 - excecoes operacionais
 - explicacoes de causalidade
 
 Preferir `config.py` para:
+
 - buckets conhecidos
 - filas conhecidas
 - filtros de metricas
@@ -229,6 +256,7 @@ Preferir `config.py` para:
 ### 3. Se for descoberta tecnica, preferir AWS
 
 Preferir obter automaticamente da AWS:
+
 - tags EC2
 - `eks:cluster-name`
 - `eks:nodegroup-name`
@@ -240,6 +268,7 @@ Preferir obter automaticamente da AWS:
 ## Regras de Analise de EKS / EC2
 
 Para workloads EKS:
+
 - nao focar em `NetworkIn` / `NetworkOut` como explicacao principal
 - instancias de EKS sao efemeras
 - o que importa mais e quantas instancias foram usadas e por quanto tempo
@@ -251,36 +280,43 @@ Para workloads EKS:
 - essa regua nao deve ser usada como evidencia direta de custo ou contagem de AWS End User Messaging/SMS
 
 Prioridade de leitura para EKS:
+
 1. `GroupTotalInstances`
 2. `GroupDesiredCapacity`
 3. `GroupInServiceInstances`
 
 Regra adicional para `EC2 Compute`:
+
 - nao afirmar causalidade principal para um nodegroup apenas porque houve scaling visivel
 - antes de atribuir o custo a um nodegroup, conferir se o tipo de instancia observado do ASG combina com o `usage_type` do custo
 - quando houver mais de um nodegroup candidato, preferir linguagem de `candidato principal` ou `hipotese mais provavel` se a evidencia ainda for indireta
 - em contexto de evento do Claro TV+, o PDP continua sendo a hipotese primaria mais comum para aumento de compute, mas isso deve ser confirmado com metrica e aderencia de tipo de instancia
 
 O prompt deve orientar a IA a usar:
+
 - `GroupTotalInstances` como principal evidencia de scaling
 - `min_value` e `peak_value` para descrever faixa real observada
 
 Evitar resumos pobres como:
+
 - `10 -> 9`
 - `10 fixo`
 
 Quando houver oscilacao real na janela, preferir:
+
 - `faixa observada: 8 a 10`
 - `faixa observada: 19 a 27`
 
 ## Regras de Ping Directory
 
 Contexto correto:
+
 - `primary`, `secondary` e `ternary` atendem o trafego principal
 - `quaternary` fica fora do balanceamento
 - `quaternary` executa backup, relatorios e limpeza
 
 Consequencias:
+
 - nao tratar `quaternary` como explicacao principal para compute de EKS
 - nao tratar `NetworkOut` alto da `quaternary` como anomalia por si so quando o contexto indicar backup
 
@@ -289,15 +325,18 @@ Consequencias:
 ### Objetivo atual
 
 O objetivo atual e conseguir identificar o bucket associado ao pico usando:
+
 - `AllRequests`
 
 Por decisao atual do projeto:
+
 - simplificar request metrics para `AllRequests`
 - nao depender neste momento de `GetRequests`, `PutRequests`, `ListRequests` etc.
 
 ### Coleta de S3
 
 A coleta de S3 deve:
+
 1. listar buckets
 2. descobrir a regiao real do bucket com `get_bucket_location`
 3. descobrir o `MetricsConfiguration Id` do bucket
@@ -307,6 +346,7 @@ A coleta de S3 deve:
 Se o bucket nao tiver exatamente `all-objects`, o projeto deve tentar qualquer outro `MetricsConfiguration Id` disponivel antes de concluir que nao ha request metrics utilizaveis.
 
 Foi identificado um bug historico:
+
 - `s3_request_filter_id` estava em `derived_context`
 - mas a query procurava esse campo apenas no topo do recurso
 
@@ -321,29 +361,35 @@ Na descoberta de S3, buckets conhecidos do `config.py` devem ser priorizados ant
 `AllRequests` so existe para buckets que tenham request metrics configurada.
 
 Logo:
+
 - buckets sem `all-objects` ou filtro equivalente nao terao `AllRequests`
 - isso nao significa falha do codigo automaticamente
 
 ### Interpretacao correta da IA para S3
 
 A IA:
+
 - nao deve usar apenas tamanho do bucket
 - nao deve usar apenas numero de objetos
 - nao deve usar apenas contexto operacional
 - nao deve usar score interno como prova
 
 Se um bucket tiver `AllRequests`:
+
 - ele pode virar candidato forte
 
 Mas so deve ser tratado como causador do spike se:
+
 - a data do pico de requests coincidir com a data do spike de custo
 - ou houver aumento material exatamente naquela data
 
 Se so um bucket estiver instrumentado e os outros nao:
+
 - tratar como `candidato principal`
 - nao tratar como `causa confirmada`
 
 Com apenas `AllRequests`, a IA nao deve afirmar:
+
 - `PUT`
 - `GET`
 - `LIST`
@@ -351,22 +397,26 @@ Com apenas `AllRequests`, a IA nao deve afirmar:
 - `DELETE`
 
 Ela deve falar apenas em:
+
 - `aumento de requisicoes`
 
 ### Recomendacao padrao de observabilidade S3
 
 Quando buckets candidatos relevantes nao tiverem `AllRequests`:
+
 - recomendar habilitar `S3 Request Metrics`
 - com filtro de bucket inteiro, por exemplo `all-objects`
 
 ## Regras de GuardDuty
 
 Existe regra especifica para:
+
 - `SAE1-PaidS3DataEventsAnalyzed`
 
 Essa anomalia deve ser correlacionada com buckets S3.
 
 Mas:
+
 - se nao houver `AllRequests`, nao concluir bucket lider com alta confianca
 - se houver `AllRequests`, comparar a data do spike do bucket com a data do spike de custo
 
@@ -375,6 +425,7 @@ Correlacoes com scaling de EKS, ingestao de logs ou outros servicos devem ser tr
 ## Regras de CloudWatch Logs / DataScanned-Bytes
 
 Para `DataScanned-Bytes`, o projeto deve enriquecer o payload com metadados objetivos de query sempre que possivel:
+
 - `query_id`
 - `query_definition_id`
 - `query_definition_name`
@@ -384,6 +435,7 @@ Para `DataScanned-Bytes`, o projeto deve enriquecer o payload com metadados obje
 - `execution_origin`
 
 Importante:
+
 - a API pode nao permitir concluir se a query foi manual, agendada ou disparada por automacao
 - quando isso acontecer, `execution_origin` deve permanecer `unknown`
 - nao relacionar `DataScanned-Bytes` com GuardDuty sem evidencia direta nas queries ou no payload
@@ -394,30 +446,35 @@ Importante:
 SMS deve ser apoiado por filas SQS conhecidas, configuradas em `config.py`.
 
 Filas atuais:
+
 - `prd-sso-fachada-digital-id-sms-mse`
 - `prd-sso-fachada-digital-id-sms-rtdm`
 - `prd-sso-fachada-digital-id-sms-sns`
 - `prd-sso-fachada-digital-id-whatsapp`
 
 Metricas SQS importantes:
+
 - `NumberOfMessagesSent`
 - `NumberOfMessagesReceived`
 - `ApproximateNumberOfMessagesVisible`
 - `ApproximateAgeOfOldestMessage`
 
 Leitura esperada:
+
 - `Sent` e `Received` = evidencia principal de volume
 - `Visible` e `AgeOfOldestMessage` = backlog ou degradacao
 
 ## Prompt e Conclusao da IA
 
 O prompt deve orientar a IA a:
+
 - nao inventar causalidade sem evidencia
 - separar hipotese forte de hipotese fraca
 - usar data absoluta
 - fechar a resposta com `ANALISE CONCLUIDA`
 
 O programa deve avisar no shell se:
+
 - o texto da IA nao terminar com `ANALISE CONCLUIDA`
 
 Isso ja foi implementado.
@@ -425,6 +482,7 @@ Isso ja foi implementado.
 ## Modelos Bedrock
 
 O projeto suporta hoje, via `InvokeModel`, pelo menos:
+
 - Anthropic
 - Amazon Nova
 - OpenAI
@@ -434,6 +492,7 @@ O projeto suporta hoje, via `InvokeModel`, pelo menos:
 Mas o modelo padrao atual esta em `config.py`.
 
 Importante:
+
 - alguns modelos exigem `inference profile`
 - Anthropic ativo em Bedrock frequentemente precisa de `us.anthropic...` ou `global.anthropic...`
 
@@ -442,6 +501,7 @@ Importante:
 ### Buckets conhecidos
 
 Ja mapeados no `config.py`:
+
 - `prd-ciam-logs`
 - `prd-sso-ciam-pingdirectory`
 - `prd-ping-federate-logs-raw`
@@ -449,6 +509,7 @@ Ja mapeados no `config.py`:
 ### Filas conhecidas
 
 Ja mapeadas no `config.py`:
+
 - `prd-sso-fachada-digital-id-sms-mse`
 - `prd-sso-fachada-digital-id-sms-rtdm`
 - `prd-sso-fachada-digital-id-sms-sns`
@@ -457,6 +518,7 @@ Ja mapeadas no `config.py`:
 ### Firehose streams conhecidos
 
 Ja mapeados no `config.py`:
+
 - `prd-sso-fachada-firehose-s3`
   Uso: API do motor de regras
 - `prd-sso-fachada-reset-firehose-s3`
@@ -465,6 +527,7 @@ Ja mapeados no `config.py`:
   Uso: API de envio de SMS
 
 Metricas de Firehose priorizadas para correlacao:
+
 - `IncomingRecords`
 - `IncomingBytes`
 - `DeliveryToS3.Records`
@@ -473,6 +536,7 @@ Metricas de Firehose priorizadas para correlacao:
 - `DeliveryToS3.DataFreshness`
 
 Metricas de Glue priorizadas para correlacao:
+
 - `glue.driver.aggregate.bytesRead`
 - `glue.driver.aggregate.bytesWritten`
 - `glue.driver.aggregate.elapsedTime`
@@ -483,6 +547,7 @@ Metricas de Glue priorizadas para correlacao:
 ### Repositorios ECR conhecidos
 
 Ja mapeados no `config.py`:
+
 - `pingidentity/pingaccess`
   Uso: imagens de Ping Access e PDP no EKS
 - `pingidentity/pingfederate`
@@ -493,9 +558,11 @@ Ja mapeados no `config.py`:
   Uso: imagens da API de envio de SMS no EKS
 
 Metricas de ECR priorizadas para correlacao:
+
 - `RepositoryPullCount`
 
 Uso esperado:
+
 - ECR deve entrar apenas como evidencia complementar para EKS
 - aumento de pulls pode reforcar hipoteses de rollout, restart ou scale-out
 - ECR nao deve ser tratado como causa principal isolada de custo
@@ -503,12 +570,14 @@ Uso esperado:
 ### AWS Backup
 
 Metricas priorizadas para correlacao complementar:
+
 - `NumberOfBackupJobsCompleted`
 - `NumberOfRecoveryPointsCreated`
 - `BackupVaultBytes`
 - `NumberOfCopyJobsCompleted`
 
 Uso esperado:
+
 - AWS Backup deve entrar como evidencia complementar para `EC2-Other`, snapshots e backup de S3
 - pode ajudar a identificar aumento de jobs, recovery points, volume armazenado e copias
 - nao deve ser tratado como causa principal isolada sem coincidencia temporal com a anomalia
@@ -528,6 +597,7 @@ Usage type `NatGateway-Bytes` nao deve cair na regra generica de `EC2-Other` sem
 
 Ja mapeados no `config.py`:
 Load balancers abaixo relacionados a serviços Ping Access, Federate, PDP e Directory:
+
 - `prd-sso-ciam-privatelink`
   Tipo: network | Uso: SOMENTE integracao de autenticacao/login do Claro TV+; nao carrega PDP/autorizacao
 - `prd-grupoPD-ldap`
@@ -547,6 +617,7 @@ Load balancers abaixo relacionados as apis do fachada sso cadastro, reset e envi
   Tipo: application | Uso: cluster ping external
 
 Metricas de Load Balancer priorizadas para correlacao:
+
 - `RequestCount`
 - `ProcessedBytes`
 - `TargetResponseTime`
@@ -563,7 +634,9 @@ Metricas de Load Balancer priorizadas para correlacao:
   Uso: APIs de cadastro, reset e envio de sms
 
 ### Nodegroups e ASGs conhecidos
+
 Ping access - EKS
+
 - `eks-ping-access*`
 Ping PDP - EKS
 - `eks-ping-pdp*`
@@ -575,11 +648,13 @@ Apis Fachada Cadastro, reset envio SMS - EKS
 ## Como evoluir o projeto sem perder coerencia
 
 Antes de mudar algo, verificar:
+
 1. isso e configuracao ou descoberta?
 2. isso impacta relatorio humano, payload Bedrock, ou ambos?
 3. a IA vai ganhar evidencia real ou so contexto narrativo?
 
 Preferencias do projeto:
+
 - relatorio TXT principal limpo
 - detalhes tecnicos em arquivo separado
 - contexto de negocio em `PROJECT_CONTEXT.md`

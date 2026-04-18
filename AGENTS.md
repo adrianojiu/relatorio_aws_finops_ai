@@ -66,6 +66,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Antes de implementar
+
 - Analise o problema
 - Proponha uma abordagem simples, segura e escalável
 - Só então escreva o código
@@ -73,6 +74,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Princípios fundamentais
+
 - Código simples e legível (KISS)
 - Funções pequenas com responsabilidade única (SRP)
 - Baixo acoplamento e alta coesão
@@ -84,6 +86,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Arquitetura e organização
+
 - Separar claramente:
   - entrada (API / script / handler)
   - lógica de negócio (domain/service)
@@ -94,6 +97,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Boas práticas de código
+
 - Nomes claros e autoexplicativos
 - Evitar funções grandes e deeply nested
 - Preferir early return
@@ -104,6 +108,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Performance
+
 - Evitar processamento desnecessário
 - Considerar latência e escalabilidade
 - Evitar chamadas externas repetidas (cache quando aplicável)
@@ -112,12 +117,14 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Idempotência
+
 - Operações devem ser idempotentes
 - Evitar efeitos colaterais em reprocessamento
 
 ---
 
 ## Concorrência
+
 - Código seguro para execução paralela
 - Evitar race conditions
 - Garantir consistência
@@ -125,6 +132,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Observabilidade
+
 - Incluir logs, métricas e tracing quando aplicável
 - Permitir correlação (request id / correlation id)
 - Facilitar troubleshooting
@@ -132,6 +140,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Eficiência de custo (FinOps)
+
 - Evitar uso desnecessário de recursos
 - Considerar custo de chamadas externas
 - Projetar soluções eficientes em escala
@@ -139,18 +148,21 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Evolução
+
 - Código fácil de modificar e estender
 - Evitar designs rígidos
 
 ---
 
 ## Testabilidade
+
 - Código fácil de testar isoladamente
 - Desacoplar dependências externas
 
 ---
 
 ## Contratos e versionamento
+
 - Definir e validar entrada/saída de dados
 - Versionar APIs e eventos
 - Garantir compatibilidade retroativa quando necessário
@@ -158,6 +170,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Integrações externas
+
 - Definir timeouts explícitos
 - Tratar falhas, retries e backoff exponencial
 - Evitar retry infinito
@@ -166,18 +179,21 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Backpressure
+
 - Sistema deve lidar com sobrecarga de forma controlada
 - Evitar colapso sob alta demanda
 
 ---
 
 ## Limites e proteção
+
 - Validar limites de entrada (tamanho, volume, frequência)
 - Evitar abuso ou processamento excessivo
 
 ---
 
 ## Operação
+
 - Código fácil de operar em produção
 - Logs suficientes para diagnóstico
 - Evitar intervenção manual frequente
@@ -185,28 +201,33 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Deploy
+
 - Permitir deploy seguro e rollback
 - Evitar mudanças disruptivas
 
 ---
 
 ## Feature flags
+
 - Permitir ativação/desativação controlada de funcionalidades
 
 ---
 
 ## Auditoria
+
 - Registrar ações relevantes (quem, quando, o quê)
 - Garantir rastreabilidade de operações críticas
 
 ---
 
 ## Métricas de negócio
+
 - Permitir coleta de métricas relevantes (ex: volume, sucesso/erro)
 
 ---
 
 ## Segurança (Security by Design)
+
 - Princípio do menor privilégio
 - Defesa em profundidade
 - Fail-safe defaults
@@ -215,6 +236,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Proteção de dados (LGPD)
+
 - Minimização de dados
 - Nunca expor ou logar dados sensíveis (PII)
 - Mascarar ou anonimizar quando possível
@@ -223,12 +245,14 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Validação de entrada
+
 - Validar e sanitizar todas as entradas externas
 - Prevenir injection, XSS, path traversal
 
 ---
 
 ## Autenticação e autorização
+
 - Usar mecanismos seguros e consolidados
 - Garantir verificação de autorização
 - Nunca expor credenciais
@@ -236,6 +260,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Gestão de segredos
+
 - Nunca armazenar segredos no código
 - Usar environment variables ou secret manager
 - Nunca logar segredos
@@ -243,18 +268,21 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Logs e dados sensíveis
+
 - Logs com contexto, sem PII
 - Evitar logar payloads completos sensíveis
 
 ---
 
 ## Dependências
+
 - Usar bibliotecas confiáveis e mantidas
 - Evitar dependências desnecessárias
 
 ---
 
 ## Resiliência
+
 - Falhar de forma segura (fail closed)
 - Não expor detalhes internos em erros
 - Tratar exceções de forma controlada
@@ -262,6 +290,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Contexto específico (Python / AWS / automação)
+
 - Não acoplar lógica diretamente com boto3
 - Criar camada de abstração para AWS
 - Usar IAM roles (IRSA)
@@ -272,7 +301,9 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 ---
 
 ## Antes de finalizar (obrigatório)
+
 Revise e valide:
+
 - Código simples ou apenas funcional?
 - Acoplamento desnecessário?
 - Funções com múltiplas responsabilidades?
@@ -290,7 +321,9 @@ Se houver problema, refatore antes de entregar.
 ---
 
 ## Revisão final obrigatória
+
 Faça uma revisão crítica como arquiteto:
+
 - Identifique riscos de design, segurança e escalabilidade
 - Sugira melhorias
 - Refatore se necessário
@@ -298,5 +331,6 @@ Faça uma revisão crítica como arquiteto:
 ---
 
 ## Saída esperada
+
 - Código limpo, seguro, resiliente e pronto para produção
 - Explicação breve das decisões de arquitetura, performance e segurança
