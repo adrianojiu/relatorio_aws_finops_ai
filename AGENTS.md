@@ -158,6 +158,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 
 - Código fácil de testar isoladamente
 - Desacoplar dependências externas
+- Código deve ser feito pensando em poder ser testado de forma automatizada
 
 ---
 
@@ -232,6 +233,8 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 - Defesa em profundidade
 - Fail-safe defaults
 - Nunca confiar em entrada externa
+- Seguir Cloud Security Alliance (CSA) - CCM e STAR
+- Seguir melhores praticas owasp
 
 ---
 

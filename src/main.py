@@ -428,7 +428,7 @@ def main():
                 daily_costs=daily_costs,
                 top_costs=top_costs,
                 enriched_anomalies=enriched_anomalies,
-                contexto_operacional=config.CONTEXT_OPERATIONAL,
+                contexto_operacional=config.BEDROCK_CONTEXT,
                 business_event_calendar=business_event_calendar,
             ),
         )
@@ -443,7 +443,7 @@ def main():
             "write_bedrock_prompt",
             lambda: _write_text_file(
                 prompt_file,
-                bedrock.build_bedrock_prompt(report_data, config.CONTEXT_OPERATIONAL),
+                bedrock.build_bedrock_prompt(report_data, config.BEDROCK_CONTEXT),
             ),
         )
 
@@ -455,7 +455,7 @@ def main():
             try:
                 ai_result = execution_logger.run_step(
                     "bedrock_inference",
-                    lambda: bedrock.analyze_with_bedrock(report_data, config.CONTEXT_OPERATIONAL),
+                    lambda: bedrock.analyze_with_bedrock(report_data, config.BEDROCK_CONTEXT),
                 )
                 ai_analysis = ai_result.get("text")
                 ai_metadata = ai_result.get("metadata", {})

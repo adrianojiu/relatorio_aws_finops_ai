@@ -18,6 +18,7 @@ Esses arquivos consolidam:
 - regras de parametrizacao
 - convencoes de manutencao
 - expectativas para README, configuracao e Bedrock
+- a secao `## Contexto para Bedrock` do `PROJECT_CONTEXT.md` como fonte textual unica enviada ao modelo
 
 ### Onde alterar cada tipo de contexto
 
@@ -28,6 +29,7 @@ Esses arquivos consolidam:
   - o que é comportamento esperado ou exceção operacional
   - como interpretar eventos, pushes, PDP, Ping Directory, CloudWatch Logs e SMS
   - decisões já tomadas no projeto sobre causalidade e leitura dos relatórios
+  - a secao `## Contexto para Bedrock`, que agora e a unica fonte textual enviada ao modelo
 
 - [`AGENTS.md`](./AGENTS.md)
   Use para instruções curtas de trabalho para agentes/IA.

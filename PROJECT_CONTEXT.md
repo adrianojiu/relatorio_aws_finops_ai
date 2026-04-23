@@ -48,6 +48,12 @@ Use `README.md` para:
 - artefatos gerados
 - orientacoes de uso
 
+Use a secao `## Contexto para Bedrock` deste arquivo para:
+
+- o contexto textual enviado ao Bedrock em runtime
+- resumir o dominio que precisa acompanhar o payload estruturado
+- manter uma unica fonte de verdade para humanos e IA
+
 ## Regras de manutencao
 
 Este arquivo deve ser revisado sempre que houver mudanca relevante em:
@@ -441,6 +447,31 @@ Importante:
 
 - alguns modelos exigem `inference profile`
 - Anthropic ativo em Bedrock frequentemente precisa de `us.anthropic...` ou `global.anthropic...`
+
+## Contexto para Bedrock
+
+- Ambiente AWS de CIAM com Ping Identity em EKS e Ping Directory em EC2.
+- PDP oscila mais em dias de eventos de streaming do Claro TV+; scaling costuma ser agendado e, em poucos casos, reativo.
+- Ping Federate e Ping Access tambem oscilam com eventos, mas normalmente menos que o PDP.
+- Eventos e pushes do Claro TV+ devem ser usados como contexto de negocio para plays, autenticacao, autorizacao e scaling agendado; o nodegroup do EKS PDP tende fortemente, mas nao completamente, a ser utilizado em eventos do Claro TV+.
+- Sempre que mencionar eventos com relacao ao Claro TV+, deixe explicito que o contexto e do Claro TV+ para evitar confusoes com outros eventos ou atividades.
+- Eventos de pull acima do normal no ECR podem indicar que o cluster `prd-sso-ciam` esta sendo escalado para atender a demanda de eventos do Claro TV+ ou outro scaling.
+- O cluster EKS `prd-sso-ciam` hospeda Ping Access, Ping Federate e PDP.
+- O calendario de push/eventos nao deve ser usado como evidencia direta de custo ou volume de AWS End User Messaging/SMS.
+- Ping Directory: `primary`, `secondary` e `ternary` atendem producao; `quaternary` fica fora do balanceamento e executa backup para S3, relatorios e limpeza de base LDAP.
+- `NatGateway-Bytes` costuma sofrer influencia de atividades de backup, mas nao tem correlacao direta com eventos do Claro TV+.
+- SMS e transacional; AWS End User Messaging e usado para fallback, nao campanha. RTDM e MSE, que sao ferramentas internas fora da AWS, sao os principais para envios; AWS End User Messaging so e usado se eles falham.
+- Para CloudWatch Logs `DataScanned-Bytes`, priorize evidencias de queries executadas e metadados de consulta.
+- Execucoes manuais ou agendadas de queries no CloudWatch Logs podem gerar custos significativos dependendo do volume escaneado, mas fazem parte da operacao e investigacao.
+- No inicio do mes e na primeira semana podem ocorrer queries operacionais recorrentes no CloudWatch Logs para FinOps e reunioes de MBR.
+- As APIs de cadastro de clientes, reset de senha e envio de SMS rodam no cluster EKS `prd-sso-fachada`; eventos do Claro TV+ normalmente nao tem relacao com envio de SMS.
+- Fique atento a filas SQS relacionadas a SMS e envios do fachada, principalmente as internas de MSE e RTDM, alem da fila de fallback do SNS; variacoes podem indicar mudancas no volume transacional ou falhas nos canais primarios.
+- Existem buckets S3 com diferentes papeis, incluindo logs brutos do Ping, dados transformados para metricas de negocio e backup/exportacao do Ping Directory; entender o papel de cada bucket e crucial para correlacionar custos e atividades.
+- O time de dados costuma fazer queries de leitura em buckets de logs do Ping para gerar metricas e dashboards, mas atividades incomuns podem indicar problemas ou mudancas no comportamento do sistema.
+- GuardDuty monitora atividades suspeitas, mas os alertas devem ser correlacionados com outros dados operacionais para entender o contexto completo.
+- Load balancers usados pelo cluster EKS `prd-sso-ciam` tendem a ter alto consumo quando eventos do Claro TV+ acontecem, mas o load balancer interno de integracao com a Claro TV+ tem comportamento mais diretamente correlacionado com esses eventos.
+- Houve stress test em `2026-04-15`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
+- Eventos no Brasil como Black Friday, Dia das Maes, Natal, Copa do Mundo e Jogos Olimpicos tendem a aumentar a demanda e, consequentemente, a utilizacao dos recursos da plataforma.
 
 ## Como evoluir o projeto sem perder coerencia
 
