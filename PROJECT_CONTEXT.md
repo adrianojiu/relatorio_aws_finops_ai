@@ -70,6 +70,8 @@ O `README.md` deve ser revisado quando mudarem:
 - parametros de execucao
 - artefatos gerados
 - fluxo operacional
+- alteraçaões sempre devem ser documentadas no README.md
+- README.md é o arquivo de documentação primcipal, deve refletir o estado atual do projeto
 
 Evitar hardcode sempre que possivel.
 
