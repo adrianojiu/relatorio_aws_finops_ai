@@ -32,12 +32,24 @@ def build_bedrock_prompt(report_data, context_operational):
         for item in selected_anomalies
     ]
     selected_topics_text = "\n".join(selected_topics) if selected_topics else "- Nenhuma anomalia selecionada"
+    period_cost_context = report_data.get("period_cost_context") or {}
+    has_period_cost_context = any(
+        period_cost_context.get(block_name)
+        for block_name in ("top_services", "top_usage_types", "top_api_operations")
+    )
 
     if prompt_template:
         return (
             f"{prompt_template}\n\n"
             f"Contexto operacional consolidado:\n{context_operational}\n\n"
             f"Itens selecionados para analise principal nesta execucao:\n{selected_topics_text}\n\n"
+            + (
+                "Contexto complementar do periodo para a IA:\n"
+                "- IA, estes sao os principais custos por service, usage type e API operation do periodo.\n"
+                "- Use este bloco apenas para ampliar contexto e tendencia, sem substituir a analise principal das anomalias do dia.\n\n"
+                if has_period_cost_context else ""
+            )
+            +
             "Instrucoes adicionais:\n"
             # Reinforce a short executive answer even when the payload is rich in detail.
             "- Entregue resposta curta, objetiva e executiva.\n"

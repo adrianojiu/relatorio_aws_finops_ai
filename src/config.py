@@ -43,6 +43,7 @@ MIN_ABSOLUTE_VARIATION_USD = 5.0  # Variacao absoluta minima; util para futuros 
 TOP_N_SERVICES = 5  # Quantos servicos destacar nos rankings principais do relatorio.
 TOP_N_DAILY_SERVICES = 10  # Quantos servicos mostrar por dia na serie do TXT.
 TOP_N_ANOMALIES = 10  # Quantas anomalias relevantes manter para enriquecimento e ranking interno.
+TOP_N_PERIOD_CONTEXT_ITEMS = 20  # Quantos itens enviar para os rankings globais de contexto do periodo no payload da IA.
 
 # Service-specific report handling
 SPECIAL_SERVICES = ["AWS End User Messaging", "End User Messaging"]
@@ -50,6 +51,25 @@ SMS_COMPLEMENTARY_USAGE_TYPE_PATTERNS = [
     "OutboundSMS-BR-Standard-Sharedroute-MessageCount",
     "DeliveryAttempts-SMS",
 ]
+S3_MAX_COMPLEMENTARY_USAGE_TYPES = 5  # Quantos usage types pares do S3 enviar para ajudar a identificar mudanca de classe/tier.
+API_OPERATION_SERVICES = [
+    "Amazon Simple Storage Service",
+    "AmazonCloudWatch",
+    "AWS End User Messaging",
+    "End User Messaging",
+    "EC2 - Other",
+]  # Fase 1: services em que API operation tende a agregar explicacao causal real.
+MAX_API_OPERATIONS_PER_ANOMALY = 5  # Quantas operacoes relevantes enviar por anomalia para evitar ruido no payload.
+S3_USAGE_FAMILY_SUMMARIES = {
+    "s3_requests": "Custo ligado a requisicoes S3; em `Requests-Tier1/Tier2`, tier significa preco de request, nao classe de armazenamento do bucket.",
+    "s3_storage_class_transition": "Custo compativel com transicao entre classes/tier de armazenamento do S3, incluindo lifecycle e Intelligent-Tiering.",
+    "s3_storage": "Custo de armazenamento recorrente por classe de storage; comparar classes que subiram e cairam pode indicar mudanca de tier.",
+    "s3_retrieval_restore": "Custo de leitura, retrieval ou restore de classes frias do S3.",
+    "s3_early_delete": "Custo de early delete ou permanencia minima, comum apos mover ou remover objetos antes do prazo da classe.",
+    "s3_data_transfer": "Custo de transferencia de dados associada ao S3.",
+    "s3_inventory_and_analytics": "Custo de inventory, analytics ou tabelas auxiliares do S3.",
+    "s3_other": "Custo S3 sem classificacao semantica forte apenas pelo usage type.",
+}
 
 # Output
 OUTPUT_DIR = "output"
@@ -127,6 +147,18 @@ S3_CLOUDTRAIL_MAX_MATCHES = 5  # Quantos eventos exemplares entram no resumo fin
 S3_CLOUDTRAIL_MAX_SUMMARY_ITEMS = 3  # Quantos itens mostrar em rankings como top atores e top eventos.
 S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO = 1.05  # Gatilho minimo para consultar CloudTrail: hoje >= 105% da media.
 S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS = 2  # Permite olhar tambem o pico recente de AllRequests quando ele ocorreu ate 2 dias antes.
+S3_TIER_CHANGE_MIN_VARIATION_USD = 3.0  # Sinal minimo de custo para tratar storage/tier como evidência material.
+S3_TIER_CHANGE_MIN_VARIATION_PCT = 5.0  # Percentual minimo para evitar classificar storage quase estavel como mudanca de tier.
+S3_CLOUDTRAIL_TIER_EVENT_NAMES = {
+    "PutBucketLifecycleConfiguration",
+    "DeleteBucketLifecycle",
+    "PutBucketIntelligentTieringConfiguration",
+    "DeleteBucketIntelligentTieringConfiguration",
+    "CopyObject",
+    "RestoreObject",
+    "PutObject",
+    "CompleteMultipartUpload",
+}  # Eventos com maior chance de ajudar a explicar mudanca de tier/classe no S3.
 
 # Messaging correlation metrics
 MESSAGING_SQS_METRICS = [

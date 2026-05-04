@@ -238,6 +238,7 @@ def main():
     data_inicio = None
     data_fim = None
     ultimo_dia = None
+    operation_timeseries_df = None
 
     try:
         if args.skip_calendar_confirmation:
@@ -270,6 +271,14 @@ def main():
             df = execution_logger.run_step(
                 "cost_explorer_fetch",
                 lambda: cost_explorer.fetch_cost_drivers_from_cost_explorer(data_inicio, data_fim),
+            )
+            operation_timeseries_df = execution_logger.run_step(
+                "cost_explorer_fetch_api_operations",
+                lambda: cost_explorer.fetch_service_operations_from_cost_explorer(
+                    data_inicio,
+                    data_fim,
+                    services=config.API_OPERATION_SERVICES,
+                ),
             )
         elif args.source == "csv":
             if not args.csv_file:
@@ -350,12 +359,24 @@ def main():
             lambda: anomaly_detection.calculate_anomalies(timeseries_df, data_inicio, data_fim, ultimo_dia),
         )
         anomalies = execution_logger.run_step(
-            "enrich_sms_complementary_usage_types",
-            lambda: anomaly_detection.enrich_sms_complementary_usage_types(
+            "enrich_complementary_usage_types",
+            lambda: anomaly_detection.enrich_complementary_usage_types(
                 anomalies,
                 timeseries_df,
                 ultimo_dia,
             ),
+        )
+        anomalies = execution_logger.run_step(
+            "enrich_api_operations",
+            lambda: anomaly_detection.enrich_api_operations(
+                anomalies,
+                operation_timeseries_df,
+                ultimo_dia,
+            ),
+        )
+        anomalies = execution_logger.run_step(
+            "enrich_s3_tier_change_analysis",
+            lambda: anomaly_detection.enrich_s3_tier_change_analysis(anomalies),
         )
         relevant_anomalies = execution_logger.run_step(
             "filter_relevant_anomalies",
@@ -429,6 +450,17 @@ def main():
                 top_costs=top_costs,
                 enriched_anomalies=enriched_anomalies,
                 contexto_operacional=config.BEDROCK_CONTEXT,
+                df_service_period=df_service[(df_service["Data"] >= data_inicio) & (df_service["Data"] <= data_fim)].copy(),
+                timeseries_period_df=timeseries_df[
+                    (timeseries_df["Data"] >= data_inicio) & (timeseries_df["Data"] <= data_fim)
+                ].copy(),
+                operation_timeseries_period_df=(
+                    operation_timeseries_df[
+                        (operation_timeseries_df["Data"] >= data_inicio) & (operation_timeseries_df["Data"] <= data_fim)
+                    ].copy()
+                    if operation_timeseries_df is not None and not operation_timeseries_df.empty
+                    else None
+                ),
                 business_event_calendar=business_event_calendar,
             ),
         )

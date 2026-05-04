@@ -726,10 +726,31 @@ def _extract_cloudtrail_s3_bucket_match(event, bucket_name, target_time):
     )
 
     delta_seconds = abs((event_time - target_time).total_seconds())
+    event_name = event.get("EventName")
+    request_headers = request_parameters.get("x-amz-headers") or {}
+    storage_class = (
+        request_parameters.get("x-amz-storage-class")
+        or request_parameters.get("storageClass")
+        or request_parameters.get("StorageClass")
+        or request_headers.get("x-amz-storage-class")
+    )
+    tier_change_reasons = []
+    lifecycle_configuration = request_parameters.get("lifecycleConfiguration") or {}
+    intelligent_tiering_configuration = request_parameters.get("intelligentTieringConfiguration") or {}
+
+    if event_name in config.S3_CLOUDTRAIL_TIER_EVENT_NAMES:
+        tier_change_reasons.append(f"event_name:{event_name}")
+    if storage_class:
+        tier_change_reasons.append(f"storage_class:{storage_class}")
+    if lifecycle_configuration:
+        tier_change_reasons.append("lifecycle_configuration_present")
+    if intelligent_tiering_configuration:
+        tier_change_reasons.append("intelligent_tiering_configuration_present")
+
     return {
         "event_id": event.get("EventId"),
         "event_time": event_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "event_name": event.get("EventName"),
+        "event_name": event_name,
         "event_source": event.get("EventSource"),
         "event_category": parsed.get("eventCategory"),
         "read_only": parsed.get("readOnly"),
@@ -737,6 +758,11 @@ def _extract_cloudtrail_s3_bucket_match(event, bucket_name, target_time):
         "source_ip": parsed.get("sourceIPAddress"),
         "user_agent": parsed.get("userAgent"),
         "matched_via": matched_via,
+        "storage_class": storage_class,
+        "lifecycle_rule_count": len((lifecycle_configuration.get("rules") or lifecycle_configuration.get("Rules") or [])),
+        "has_intelligent_tiering_configuration": bool(intelligent_tiering_configuration),
+        "tier_change_candidate": bool(tier_change_reasons),
+        "tier_change_reasons": tier_change_reasons,
         "time_delta_seconds": round(delta_seconds, 1),
     }
 
@@ -760,6 +786,7 @@ def _summarize_cloudtrail_s3_matches(matches, lookup_region, target_dates):
     event_name_counts = {}
     username_counts = {}
     data_event_count = 0
+    tier_change_matches = []
 
     for match in matches:
         event_name = match.get("event_name") or "unknown"
@@ -768,6 +795,8 @@ def _summarize_cloudtrail_s3_matches(matches, lookup_region, target_dates):
         username_counts[username] = username_counts.get(username, 0) + 1
         if match.get("event_category") == "Data":
             data_event_count += 1
+        if match.get("tier_change_candidate"):
+            tier_change_matches.append(match)
 
     def _top_items(counter_map):
         ranked = sorted(counter_map.items(), key=lambda item: (-item[1], item[0]))
@@ -784,6 +813,18 @@ def _summarize_cloudtrail_s3_matches(matches, lookup_region, target_dates):
         "matched_data_events_count": data_event_count,
         "top_event_names": _top_items(event_name_counts),
         "top_usernames": _top_items(username_counts),
+        "tier_change_evidence": {
+            "status": "matched" if tier_change_matches else "not_found",
+            "matched_events_count": len(tier_change_matches),
+            "top_event_names": _top_items({
+                (match.get("event_name") or "unknown"): sum(
+                    1 for current_match in tier_change_matches
+                    if (current_match.get("event_name") or "unknown") == (match.get("event_name") or "unknown")
+                )
+                for match in tier_change_matches
+            }) if tier_change_matches else [],
+            "sample_matches": tier_change_matches[: config.S3_CLOUDTRAIL_MAX_MATCHES],
+        },
         "sample_matches": matches[: config.S3_CLOUDTRAIL_MAX_MATCHES],
     }
 
@@ -1122,11 +1163,21 @@ def _should_collect_s3_cloudtrail_activity(anomaly, candidate, metrics_summary):
     if "guardduty" not in service_name and "simple storage service" not in service_name and service_name != "s3":
         return False
 
-    if "paids3dataeventsanalyzed" not in usage_type and "requests" not in usage_type:
+    usage_type_context = anomaly.get("usage_type_context") or {}
+    s3_tier_change_analysis = anomaly.get("s3_tier_change_analysis") or {}
+    complementary_usage_types = anomaly.get("complementary_usage_types") or []
+
+    storage_signal_present = usage_type_context.get("is_storage_class_change_signal") or any(
+        (item.get("usage_type_context") or {}).get("is_storage_class_change_signal")
+        for item in complementary_usage_types
+    )
+    tier_change_suspected = s3_tier_change_analysis.get("status") in {"supported", "inconclusive"}
+
+    if "paids3dataeventsanalyzed" not in usage_type and "requests" not in usage_type and not storage_signal_present and not tier_change_suspected:
         return False
 
     all_requests = metrics_summary.get("AllRequests") or {}
-    if not all_requests:
+    if not all_requests and not storage_signal_present and not tier_change_suspected:
         return False
 
     today_value = float(all_requests.get("today", 0.0) or 0.0)
@@ -1134,6 +1185,8 @@ def _should_collect_s3_cloudtrail_activity(anomaly, candidate, metrics_summary):
     peak_date = all_requests.get("peak_date")
     anchor_day = anomaly.get("anchor_day")
 
+    if storage_signal_present or tier_change_suspected:
+        return True
     if peak_date == anchor_day:
         return True
     if avg_value > 0 and today_value >= avg_value * config.S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO:

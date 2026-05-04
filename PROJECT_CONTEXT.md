@@ -230,6 +230,13 @@ O projeto diferencia:
 
 Essa distincao e importante porque nem toda variacao relevante deve ser tratada como incidente ou desperdicio.
 
+### Leitura de usage type para S3
+
+- Em S3, a leitura de `usage_type` e obrigatoria para diferenciar `requests`, `storage`, `retrieval`, `early delete`, `data transfer` e possivel `mudanca de classe/tier`.
+- `Requests-Tier1` e `Requests-Tier2` significam tier de preco de requisicao; isso nao e, por si so, mudanca de classe de armazenamento do bucket.
+- Sinais como `transition`, `tiering`, `Intelligent-Tiering`, `TimedStorage` por classe especifica e `EarlyDelete` devem ser tratados como evidencias mais fortes para migracao entre tiers/classes ou efeito colateral dessa mudanca.
+- Quando houver alta em uma classe e queda relevante em outra dentro do mesmo servico S3, isso deve ser tratado como pista forte de redistribuicao de custo por tier, nao apenas como crescimento organico de requests.
+
 ### Eventos e push do Claro TV+
 
 A regua de eventos e push do Claro TV+ e contexto de negocio importante para correlacionar:
@@ -474,6 +481,8 @@ Importante:
 - Load balancers usados pelo cluster EKS `prd-sso-ciam` tendem a ter alto consumo quando eventos do Claro TV+ acontecem, mas o load balancer interno de integracao com a Claro TV+ tem comportamento mais diretamente correlacionado com esses eventos.
 - Houve stress test em `2026-04-15`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Eventos no Brasil como Black Friday, Dia das Maes, Natal, Copa do Mundo e Jogos Olimpicos tendem a aumentar a demanda e, consequentemente, a utilizacao dos recursos da plataforma.
+- Consultar usagetype e API operation do cost explorer para se aproximar da causa e dar uma resposta mais precisa sobre as anomalias, ou listar custo fora da curva.
+- Em caso de mudança de tier do S3 verificar sobre a mudança no CloudTrail para identificar informação de quem executou e outras pertinentes.
 
 ## Como evoluir o projeto sem perder coerencia
 

@@ -90,6 +90,29 @@ Nao force todos os itens a serem anomalias.
 
 - Para GuardDuty S3 Data Events, entregue a causa mais provavel do spike apontando bucket lider somente quando houver `AllRequests` destacado para esse bucket no payload.
 - Para anomalias de S3 ou GuardDuty, use `AllRequests` como evidencia principal de pico de bucket.
+- Se o payload trouxer `top_api_operations` para S3, use essas operacoes como evidencia complementar para diferenciar leitura, escrita, copia, lifecycle e mudanca operacional.
+- Se o payload trouxer `usage_type_context` para S3, use essa leitura para diferenciar `requests`, `storage`, `transicao de classe/tier`, `retrieval/restore`, `early delete` e `data transfer`.
+- Se o payload trouxer `s3_tier_change_analysis`, trate esse bloco como veredito estruturado obrigatorio sobre mudanca de classe/tier.
+- Se o payload trouxer `s3_driver_analysis`, use esse bloco como leitura consolidada dos drivers S3 por familia de custo.
+- Nunca contradiga `s3_tier_change_analysis.status`; a classificacao textual deve obedecer exatamente esse veredito.
+- Nunca exponha nomes de campos internos, chaves JSON, flags ou variaveis tecnicas na resposta final.
+- Nao escreva trechos como `s3_tier_change_analysis.status = ...`, `is_storage_class_change_signal = ...`, `top_api_operations`, `usage_type_context` ou similares.
+- Sempre traduza esses sinais para linguagem natural de negocio e investigacao.
+- Para S3, `Requests-Tier1` e `Requests-Tier2` significam tier de preco de requisicao; nao confunda isso com mudanca de classe de armazenamento do bucket.
+- Se `usage_type_context.is_storage_class_change_signal` vier verdadeiro, ou se `complementary_usage_types` mostrar subida em uma classe/tier e queda em outra, trate `mudanca de classe/tier do bucket` como hipotese forte.
+- Se `top_api_operations` trouxer operacoes como `LifecycleTransition`, `CopyObject` ou padrao compativel com migracao, trate isso como reforco para a hipotese de mudanca de tier.
+- Se o sinal principal de S3 for `storage_class_transition`, `storage` ou `early_delete`, nao descreva o caso como spike de requests sem evidencias adicionais.
+- Para toda anomalia S3, diga explicitamente uma destas conclusoes: `mudanca de tier/classe confirmada`, `mudanca de tier/classe nao suportada pelo payload` ou `mudanca de tier/classe inconclusiva`.
+- Quando houver qualquer indicio parcial de storage, lifecycle, copia, retrieval, early delete ou CloudTrail relacionado, voce pode dizer que `mudanca de tier/classe e um possivel fator contribuinte`, desde que deixe claro se isso esta confirmado, inconclusivo ou nao sustentado.
+- Quando a conclusao for `nao suportada` ou `inconclusiva`, ainda assim descreva qual foi a operacao custosa dominante do dia.
+- Se `s3_tier_change_analysis.cloudtrail_context.status` vier como `no_matches` ou `not_collected`, diga isso de forma objetiva e nao sugira que o CloudTrail confirmou a mudanca de tier.
+- Se `s3_tier_change_analysis.cloudtrail_context.tier_change_matched_buckets` vier preenchido, use isso como evidencia forte para `mudanca de tier/classe confirmada`.
+- Se a mudanca de tier/classe nao estiver confirmada, prefira formulacoes como:
+  `mudanca de tier/classe aparece como hipotese secundaria`
+  `ha indicios parciais de mudanca de classe, mas o principal driver observado foi outro`
+  `o aumento de custo foi dominado por operacoes de request; mudanca de tier permanece apenas como possibilidade`
+- Se `s3_driver_analysis.primary_driver` e `s3_driver_analysis.secondary_driver` vierem preenchidos, use isso para separar explicitamente `driver principal` e `fator secundario` sem misturar tudo em uma causa unica.
+- Se `s3_driver_analysis.operation_family.family` indicar leitura/listagem e `s3_tier_change_analysis.status` nao estiver `supported`, nao descreva mudanca de tier como maior driver do custo.
 - Se o payload trouxer `guardduty_correlation`, use esse resumo para dizer explicitamente se GuardDuty reforca, nao reforca ou traz sinal misto para a hipotese principal de S3.
 - Nunca use tamanho do bucket, numero de objetos, score interno ou contexto operacional sozinho como prova de que ele causou o spike.
 - Sem `AllRequests`, trate o bucket apenas como candidato.
@@ -104,6 +127,10 @@ Nao force todos os itens a serem anomalias.
 - Se o payload trouxer `cloudtrail_s3_activity` para o bucket candidato, use `top_event_names`, `top_usernames`, `matched_data_events_count` e `sample_matches` como evidencia complementar de ator e tipo de acesso.
 - Se `cloudtrail_s3_activity.lookup_status` vier como `no_matches`, diga objetivamente que o cruzamento complementar com CloudTrail nao fechou nas datas-alvo.
 - Mesmo quando houver CloudTrail para o bucket, trate isso como evidencia complementar; nao substitua `AllRequests` como prova principal do bucket lider.
+- Se o payload trouxer `complementary_usage_types` para S3, use esses pares para verificar se houve migracao de custo entre classes, penalidade de early delete ou efeito colateral de retrieval.
+- Você deve ler os custos de AWS cost explorer usageType, API operation e Services e criar correlação entre eles, compare com outros custos que você recebeu e crie contexto.
+- Quando for montar os drives olhe para custos de AWS cost explorer usageType, API operation e Services e crie coerencia o que ja tem e o que ver neste recursos.
+- Usar custos de AWS cost explorer usageType, API operation e Services para criar fato quando não encontrar causa da anomalia, ao menos informar o custo fora da curva.
 
 ### Athena em contexto de S3
 
@@ -117,6 +144,7 @@ Nao force todos os itens a serem anomalias.
 - Se houver metricas de SQS no payload para SMS, use `NumberOfMessagesSent` e `NumberOfMessagesReceived` como evidencia operacional principal de aumento ou reducao de trafego.
 - Use `ApproximateAgeOfOldestMessage` ou `ApproximateNumberOfMessagesVisible` como sinais de backlog ou falha.
 - Se o payload trouxer `complementary_usage_types` para SMS, use `OutboundSMS ... MessageCount` e `DeliveryAttempts-SMS` como evidencia complementar do Cost Explorer.
+- Se o payload trouxer `top_api_operations` para AWS End User Messaging, use isso como evidencia complementar para diferenciar operacoes de envio, tentativa ou outros pads de consumo do servico.
 - Para SMS, trate os usage types complementares como apoio e as filas SQS como evidencia operacional principal.
 - Se houver divergencia entre Cost Explorer e SQS, explicite a incerteza.
 - So trate SMS como `anomalia real` quando houver evidencias de fallback excessivo, falha, retries, backlog, mudanca anormal de mix de canais ou comportamento desproporcional.
@@ -132,6 +160,7 @@ Nao force todos os itens a serem anomalias.
 ### CloudWatch Logs `DataScanned-Bytes`
 
 - Use primeiro `query_activity` quando estiver presente no payload: `query_id`, `query_definition_name`, `query_definition_id`, `log_groups`, `bytes_scanned`, `create_time` e `execution_origin`.
+- Se o payload trouxer `top_api_operations` para o servico, use isso como apoio para diferenciar custo mais ligado a leitura/consulta versus outras operacoes do servico.
 - Quando `query_activity` trouxer `cloudtrail_matches`, use esse resumo para identificar quem executou a query, se foi role, usuario ou automacao, e qual a confianca desse match.
 - Se houver `cloudtrail_matches` validos, prefira citar o ator identificado e a origem aproximada da execucao.
 - Se `execution_origin` vier como `unknown`, diga explicitamente que a API nao permitiu concluir se a query foi manual, agendada ou disparada por outra automacao.

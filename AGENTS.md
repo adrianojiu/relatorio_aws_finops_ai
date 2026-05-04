@@ -1,5 +1,8 @@
 # AGENTS.md
 
+@README.md
+@PROJECT_CONTEXT.md
+
 ## Objetivo
 
 Este repositório gera relatórios diários de custo AWS para um ambiente CIAM e enriquece a análise com correlação operacional e Bedrock.
@@ -33,6 +36,7 @@ Use `PROJECT_CONTEXT.md` como fonte principal de contexto de negócio, operaçã
 - Para Transit Gateway, use `BytesIn` e `BytesOut` como evidência principal.
 - Não force tudo a ser anomalia; diferencie `anomalia real`, `desvio esperado` e `efeito em cascata`.
 - Não afirme que o dia de referência foi o pico da janela sem conferir a série diária total.
+- consultar usagetype e API operation do cost explorer para se aproximar da causa e dar uma resposta mais precisa sobre as anomalias, ou listar custo fora da curva.
 
 ## Ao fazer mudanças
 
@@ -104,6 +108,7 @@ Sua responsabilidade não é apenas fazer o código funcionar, mas garantir qual
 - Tratamento de erro explícito e com contexto
 - Evitar variáveis globais
 - Evitar hardcode (usar configuração)
+- Sempre que alterar algo documentar em README.md
 
 ---
 

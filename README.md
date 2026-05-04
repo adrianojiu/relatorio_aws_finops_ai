@@ -2,6 +2,10 @@
 
 Este projeto gera relatórios de custos da AWS a partir do **Cost Explorer** da AWS ou CSV. O projeto está modularizado para facilitar manutenção e extensão, incluindo integração com IA via AWS Bedrock.
 
+Sempre veriticar os arquivos abaixo para criar contexto e verificar requisitos:
+@PROJECT_CONTEXT.md
+@AGENTS.md
+
 ## Contexto do Projeto
 
 Antes de alterar regras, correlacoes, observabilidade, formato de relatorio ou comportamento do Bedrock, consulte:
@@ -151,6 +155,8 @@ relatorio-custo-aws/
   - Serviços que aumentaram/reduziram custo
   - TOP N serviços por custo
   - Análise especial para AWS End User Messaging
+  - Enriquecimento semântico de `usage_type` para S3, diferenciando requests, storage, retrieval e possíveis mudanças de classe/tier
+  - Enriquecimento complementar de `API operation` para S3, CloudWatch, AWS End User Messaging e EC2 - Other
 - Geração de relatórios em **Excel** e **TXT**
 - Integração com **AWS Bedrock** para análise com IA (opcional)
 

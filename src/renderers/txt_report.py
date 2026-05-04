@@ -35,11 +35,47 @@ def write_bedrock_context_txt(base_txt_file, ultimo_dia, enriched_anomalies):
                 f"media 7d: US$ {anomaly['avg_7d']:,.2f} | "
                 f"delta: {anomaly['delta_pct']:,.2f}%\n"
             )
+            usage_type_context = anomaly.get("usage_type_context") or {}
+            if usage_type_context:
+                f.write(
+                    "  leitura usage_type: "
+                    f"{usage_type_context.get('cost_family')} | "
+                    f"{usage_type_context.get('summary')}\n"
+                )
+            s3_tier_change_analysis = anomaly.get("s3_tier_change_analysis") or {}
+            if s3_tier_change_analysis:
+                f.write(
+                    "  veredito tier S3: "
+                    f"{s3_tier_change_analysis.get('status')} | "
+                    f"{s3_tier_change_analysis.get('summary')}\n"
+                )
+            s3_driver_analysis = anomaly.get("s3_driver_analysis") or {}
+            if s3_driver_analysis:
+                f.write(
+                    "  leitura driver S3: "
+                    f"{s3_driver_analysis.get('narrative_summary')}\n"
+                )
             for resource in anomaly.get("resources", []):
                 resource_id = resource.get("resource_id") or "nao identificado"
                 f.write(
                     f"  recurso: {resource.get('resource_type')} -> {resource_id} "
                     f"(confianca {resource.get('confidence', 'low')})\n"
+                )
+            for complementary_usage in anomaly.get("complementary_usage_types", []):
+                f.write(
+                    "  usage_type complementar: "
+                    f"{complementary_usage.get('usage_type')} | "
+                    f"dia {ultimo_dia}: US$ {complementary_usage.get('cost_today', 0.0):,.2f} | "
+                    f"media 7d: US$ {complementary_usage.get('avg_7d', 0.0):,.2f} | "
+                    f"delta: {complementary_usage.get('delta_pct', 0.0):,.2f}%\n"
+                )
+            for api_operation in anomaly.get("top_api_operations", []):
+                f.write(
+                    "  api operation: "
+                    f"{api_operation.get('operation')} | "
+                    f"dia {ultimo_dia}: US$ {api_operation.get('cost_today', 0.0):,.2f} | "
+                    f"media 7d: US$ {api_operation.get('avg_7d', 0.0):,.2f} | "
+                    f"delta: {api_operation.get('delta_pct', 0.0):,.2f}%\n"
                 )
         f.write("\n")
 
