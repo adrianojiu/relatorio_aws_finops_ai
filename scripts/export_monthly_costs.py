@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import subprocess
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -21,8 +22,10 @@ from typing import Dict, Iterable, List, Tuple
 import boto3
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+SRC_ROOT = PROJECT_ROOT / "src"
+for _p in (str(PROJECT_ROOT), str(SRC_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from src import config
 
@@ -90,7 +93,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         default=config.MONTHLY_EXPORT_OUTPUT_DIR,
-        help=f"Diretorio de saida. Padrao: {config.MONTHLY_EXPORT_OUTPUT_DIR}",
+        help=f"Diretorio de saida dos CSVs. Padrao: {config.MONTHLY_EXPORT_OUTPUT_DIR}",
+    )
+    parser.add_argument(
+        "--enable-bedrock",
+        action="store_true",
+        default=False,
+        help="Habilita analise via Bedrock ao chamar o generate_monthly_analysis.",
+    )
+    parser.add_argument(
+        "--bedrock-region",
+        default=config.BEDROCK_REGION,
+        help=f"Regiao do Bedrock. Padrao: {config.BEDROCK_REGION}",
+    )
+    parser.add_argument(
+        "--bedrock-model",
+        default=config.BEDROCK_MODEL_ID,
+        help=f"Modelo Bedrock. Padrao: {config.BEDROCK_MODEL_ID}",
+    )
+    parser.add_argument(
+        "--skip-analysis",
+        action="store_true",
+        default=False,
+        help="Pula a chamada ao generate_monthly_analysis apos gerar os CSVs.",
+    )
+    parser.add_argument(
+        "--sns-topic-arn",
+        default=config.SNS_TOPIC_ARN,
+        help="ARN do tópico SNS para envio do relatório por e-mail. Padrão: env FINOPS_SNS_TOPIC_ARN",
+    )
+    parser.add_argument(
+        "--s3-bucket",
+        default=config.S3_REPORT_BUCKET,
+        help="Bucket S3 para upload dos arquivos antes do envio SNS. Padrão: env FINOPS_S3_BUCKET",
+    )
+    parser.add_argument(
+        "--s3-prefix",
+        default=config.S3_REPORT_PREFIX_MONTHLY,
+        help=f"Prefixo S3 para organização dos arquivos. Padrão: {config.S3_REPORT_PREFIX_MONTHLY}",
     )
     return parser.parse_args()
 
@@ -109,8 +149,9 @@ def iter_month_days(start_inclusive: str, end_exclusive: str) -> Iterable[str]:
         current += timedelta(days=1)
 
 
-def cost_explorer_client(profile: str, region: str):
-    session = boto3.Session(profile_name=profile, region_name=region)
+def cost_explorer_client(profile: str | None, region: str):
+    # profile=None usa credenciais do ambiente (role EC2, env vars, etc.)
+    session = boto3.Session(profile_name=profile or None, region_name=region)
     return session.client("ce", region_name=region)
 
 
@@ -209,6 +250,11 @@ def monthly_output_path(output_dir: Path, base_filename: str, month_str: str) ->
 
 def main() -> None:
     args = parse_args()
+
+    # Limpeza de artefatos antigos (>13 meses) antes de iniciar a execução principal
+    import utils as _utils
+    _utils.cleanup_old_reports()
+
     start, end = month_bounds(args.month)
     client = cost_explorer_client(args.aws_profile, args.cost_explorer_region)
     output_dir = Path(args.output_dir)
@@ -242,6 +288,37 @@ def main() -> None:
 
     print(f"CSV com todos os servicos salvo em: {all_services_path}")
     print(f"CSV somente PDP salvo em: {with_pdp_path}")
+
+    if args.skip_analysis:
+        print("[export] --skip-analysis ativo: pulando generate_monthly_analysis.")
+        return
+
+    _run_monthly_analysis(args)
+
+
+def _run_monthly_analysis(args: argparse.Namespace) -> None:
+    """Chama generate_monthly_analysis.py com os mesmos parametros de perfil e mes."""
+    analysis_script = Path(__file__).parent / "generate_monthly_analysis.py"
+    cmd = [sys.executable, str(analysis_script), "--month", args.month]
+    # só repassa --aws-profile quando um perfil foi explicitamente informado
+    if args.aws_profile:
+        cmd += ["--aws-profile", args.aws_profile]
+    if args.enable_bedrock:
+        cmd += [
+            "--enable-bedrock",
+            "--bedrock-region", args.bedrock_region,
+            "--bedrock-model", args.bedrock_model,
+        ]
+    if args.sns_topic_arn and args.s3_bucket:
+        cmd += [
+            "--sns-topic-arn", args.sns_topic_arn,
+            "--s3-bucket", args.s3_bucket,
+            "--s3-prefix", args.s3_prefix,
+        ]
+    print(f"\n[export] Chamando analise mensal: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        print(f"[export] AVISO: generate_monthly_analysis encerrou com codigo {result.returncode}.")
 
 
 if __name__ == "__main__":

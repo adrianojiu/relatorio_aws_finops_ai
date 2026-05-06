@@ -61,6 +61,7 @@ Nao force todos os itens a serem anomalias.
 
 ### EKS e EC2 Compute
 
+- PDP neste ambiente significa Policy Decision Point — componente de autorizacao do Ping Identity rodando em EKS. Nunca expanda PDP como "Plataforma de Distribuicao de Push" ou qualquer outra variacao; isso esta errado e nao existe neste ambiente.
 - Para `EC2 Compute`, confira se o tipo de instancia observado no nodegroup candidato combina com o `usage_type` do custo antes de atribuir causalidade principal.
 - Se o payload trouxer `observed_instance_types` para um ASG, use essa informacao como filtro forte de causalidade.
 - Se o `usage_type` nao combinar com o tipo de instancia observado do nodegroup, nao trate esse nodegroup como driver principal; no maximo como candidato secundario.
@@ -74,6 +75,7 @@ Nao force todos os itens a serem anomalias.
 
 - Use calendario de eventos e push apenas como contexto de negocio para aumento de plays, autenticacao, autorizacao, trafego e scaling agendado.
 - Nunca use esse calendario como evidencia direta de volume, contagem ou custo de AWS End User Messaging/SMS.
+- Nunca associe variacao de End User Messaging/SMS a eventos do Claro TV+, audiencia, notificacoes push de broadcast ou campanhas CRM — essas associacoes estao incorretas neste ambiente. SMS e acionado por acoes do usuario (OTP, MFA, cadastro, reset), nao por programacao de eventos.
 - Quando houver push relevante no mesmo dia e proximidade horaria com scaling ou aumento de trafego, trate essa correlacao como hipotese forte de negocio para EKS, load balancer, Transit Gateway e Ping Directory.
 - Quando houver evento sem push, trate isso como contexto secundario.
 - Quando houver eventos ou push candidatos no payload, prefira citar nome, horario, alcance e nodes quando disponiveis.
@@ -141,10 +143,14 @@ Nao force todos os itens a serem anomalias.
 
 ### SMS
 
+- AWS End User Messaging e usado exclusivamente para mensagens transacionais: OTP, MFA, confirmacoes de cadastro e reset de senha. Cobre envios de SMS e e-mail transacional. Nao e usado para campanhas, notificacoes push de broadcast nem comunicacao em massa.
+- Canais primarios sao RTDM e MSE (ferramentas internas fora da AWS); AWS End User Messaging e acionado apenas como fallback quando esses canais falham.
+- Eventos do Claro TV+ normalmente nao tem relacao com aumento de SMS. Picos de SMS refletem volume transacional: OTP, MFA, cadastros ou resets — acionados por acoes do usuario, nao por audiencia ou programacao de eventos.
+- Nunca atribua variacao de End User Messaging a campanhas CRM, notificacoes push de eventos ou audiencia do Claro TV+; essa associacao esta incorreta neste ambiente.
 - Se houver metricas de SQS no payload para SMS, use `NumberOfMessagesSent` e `NumberOfMessagesReceived` como evidencia operacional principal de aumento ou reducao de trafego.
 - Use `ApproximateAgeOfOldestMessage` ou `ApproximateNumberOfMessagesVisible` como sinais de backlog ou falha.
 - Se o payload trouxer `complementary_usage_types` para SMS, use `OutboundSMS ... MessageCount` e `DeliveryAttempts-SMS` como evidencia complementar do Cost Explorer.
-- Se o payload trouxer `top_api_operations` para AWS End User Messaging, use isso como evidencia complementar para diferenciar operacoes de envio, tentativa ou outros pads de consumo do servico.
+- Se o payload trouxer `top_api_operations` para AWS End User Messaging, use isso como evidencia complementar para diferenciar operacoes de envio, tentativa ou outros padroes de consumo do servico.
 - Para SMS, trate os usage types complementares como apoio e as filas SQS como evidencia operacional principal.
 - Se houver divergencia entre Cost Explorer e SQS, explicite a incerteza.
 - So trate SMS como `anomalia real` quando houver evidencias de fallback excessivo, falha, retries, backlog, mudanca anormal de mix de canais ou comportamento desproporcional.
@@ -154,7 +160,10 @@ Nao force todos os itens a serem anomalias.
 
 - Para Transit Gateway, use `BytesIn` e `BytesOut` como evidencia principal de aumento real de trafego.
 - Sem essas metricas, trate a analise como correlacao indireta.
+- Transit Gateway e um sinal fraco para correlacionar com eventos do Claro TV+ ou scaling de EKS; nao use Transit Gateway como driver principal de custo quando ELB e EC2 ja explicam o aumento.
 - Para LCU, Transit Gateway e outros servicos de rede, prefira `desvio esperado` ou `efeito em cascata` quando o comportamento acompanhar trafego legitimo, scaling agendado ou evento conhecido.
+- LCU (Load Balancer Capacity Units) e consumo derivado do volume de requisicoes no ALB/NLB; quando LCU sobe junto com EC2/EKS em dia de evento Claro TV+, classifique como `efeito em cascata` — o driver real e o aumento de trafego de autenticacao e autorizacao, nao o load balancer em si.
+- Quando ELB e EC2 subirem juntos no mesmo dia com evento relevante, trate-os como correlacionados pelo mesmo driver (trafego de autenticacao/autorizacao), nao como anomalias independentes.
 - Para NAT Gateway, nao relacione streaming, autenticacao ou backup sem coincidencia clara entre datas de scaling, rede e o pico do NAT.
 
 ### CloudWatch Logs `DataScanned-Bytes`

@@ -86,7 +86,7 @@ Para quem quer bater o olho e já executar sem ler tudo:
 
 3. **Gerar o relatório mensal com todos os serviços e somente PDP**
    ```bash
-   python3 scripts/export_monthly_pdp_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
+   python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```
 
 4. **Onde ajustar contexto e instruções**
@@ -111,39 +111,54 @@ Esse `Quickstart` é um atalho. Os detalhes completos continuam nas seções aba
 
 ```
 relatorio-custo-aws/
-├── AGENTS.md                 # Instruções curtas para agentes/IA
-├── PROJECT_CONTEXT.md        # Contexto de negócio e operação
+├── AGENTS.md                      # Instruções curtas para agentes/IA
+├── CLAUDE.md                      # Instruções para o Claude Code
+├── PROJECT_CONTEXT.md             # Contexto de negócio e operação
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
-├── run.py                    # Script launcher principal
-├── scripts/                  # Scripts auxiliares
-│   └── export_monthly_pdp_costs.py
-├── src/                      # Código fonte modular
-│   ├── main.py               # Ponto de entrada principal
-│   ├── config.py             # Configurações centralizadas
-│   ├── utils.py              # Funções utilitárias
-│   ├── collectors/           # Coleta de dados
+├── run.py                         # Script launcher do relatório diário
+├── scripts/                       # Scripts auxiliares e wrappers
+│   ├── cron_daily.sh              # Wrapper para agendamento do relatório diário
+│   ├── cron_monthly.sh            # Wrapper para agendamento do relatório mensal
+│   ├── export_monthly_costs.py    # Exporta CSVs mensais e aciona análise mensal
+│   └── generate_monthly_analysis.py  # Gera análise mensal consolidada
+├── src/                           # Código fonte modular
+│   ├── main.py                    # Ponto de entrada principal
+│   ├── config.py                  # Configurações centralizadas
+│   ├── utils.py                   # Funções utilitárias
+│   ├── collectors/                # Coleta de dados
 │   │   ├── business_events.py
 │   │   ├── cost_explorer.py
 │   │   ├── csv_input.py
+│   │   ├── metrics_cloudwatch.py
+│   │   ├── metrics_messaging.py
 │   │   └── resource_discovery.py
-│   ├── analyzers/            # Análise de custos
+│   ├── analyzers/                 # Análise de custos
 │   │   ├── anomaly_detection.py
 │   │   ├── correlation_analysis.py
 │   │   └── cost_analysis.py
-│   ├── renderers/            # Geração de relatórios
+│   ├── mappings/                  # Regras de correlação
+│   │   └── correlation_rules.py
+│   ├── renderers/                 # Geração de relatórios
 │   │   ├── txt_report.py
 │   │   ├── excel_report.py
 │   │   └── pdf_report.py
-│   └── integrations/         # Integrações (Bedrock, etc.)
-│       └── bedrock.py
-├── output/                   # Relatórios gerados
-├── export_monthly/           # CSVs mensais com e sem PDP
-├── prompts/                  # Prompts para IA
+│   └── integrations/              # Integrações externas
+│       ├── bedrock.py             # Análise via AWS Bedrock
+│       └── notifier.py            # Upload S3 + notificação SNS
+├── output/                        # Relatórios diários gerados (por data)
+│   └── monthly/                   # Relatórios mensais gerados
+├── export_monthly/                # CSVs mensais exportados
+├── prompts/                       # Prompts para IA
 │   ├── finops_analysis.txt
 │   └── assets/
-└── .venv/                    # Ambiente virtual local (opcional)
+│       ├── Régua de Pushs_SMS Now Online.xlsx  # Calendário de eventos Claro TV+
+│       └── claro.png
+├── legacy/                        # Scripts anteriores à modularização
+├── csv/                           # CSVs de entrada para modo --source csv
+├── samples/                       # Exemplos de arquivos
+└── .venv/                         # Ambiente virtual local (opcional)
 ```
 
 ## 📌 Funcionalidades
@@ -362,6 +377,10 @@ Observações:
    - Exemplo comum de operacao: workload em `sa-east-1`, Cost Explorer em `us-east-1`, Bedrock em `us-east-1`
    - Quando existir a planilha `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`, o projeto pode usa-la como calendario de eventos/push do Claro TV+ para enriquecer correlacoes de negocio
    - Essa planilha deve ser usada apenas como contexto para aumento de plays, autenticacao, autorizacao e scaling agendado; ela nao deve ser tratada como evidencia direta de custo ou volume de AWS SMS
+   - Variacoes de AWS End User Messaging/SMS NAO devem ser correlacionadas com eventos do Claro TV+; SMS e exclusivamente transacional (OTP, MFA, cadastro, reset de senha) e independente de audiencia
+   - PDP neste ambiente significa Policy Decision Point (Ping Identity) — nunca expandir como "Plataforma de Distribuicao de Push"
+   - LCU do ELB sobe como efeito derivado do trafego de EC2/EKS; quando ELB e EC2 sobem juntos em dia de evento, sao um efeito em cascata do mesmo driver, nao anomalias independentes
+   - Transit Gateway e sinal fraco para correlacionar com eventos do Claro TV+ ou scaling de EKS
    - O enriquecimento automatico de contexto tenta inferir papeis de EC2/EKS por tags e buckets S3 por nome conhecido
    - Hoje ha heuristicas para Ping Directory com `Name` contendo `PD-`, nodegroups `ping-access-app`, `ping-pdp-app`, `ping-federate-app`, cluster `prd-sso-fachada`, buckets S3 conhecidos e streams Firehose conhecidos parametrizados no `src/config.py`
    - A correlacao de Firehose usa metricas como `IncomingRecords`, `IncomingBytes`, `DeliveryToS3.Bytes`, `DeliveryToS3.Records`, `DeliveryToS3.Success` e `DeliveryToS3.DataFreshness`, configuradas no `src/config.py`
@@ -487,10 +506,41 @@ Observações:
 
 ## Export mensal com todos os serviços e somente PDP
 
-Para gerar os dois CSVs mensais no formato da pasta `export_monthly/`, use:
+Para gerar os dois CSVs mensais e já acionar a análise mensal automaticamente:
 
 ```bash
-python3 scripts/export_monthly_pdp_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
+# Execução local com perfil AWS CLI
+python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
+```
+
+Em EC2 com IAM role (sem perfil), omita `--aws-profile` — boto3 usa automaticamente as credenciais da role:
+
+```bash
+python3 scripts/export_monthly_costs.py --month 2026-03 --cost-explorer-region us-east-1
+```
+
+Com análise via Bedrock (EC2 com role):
+
+```bash
+python3 scripts/export_monthly_costs.py --month 2026-03 \
+  --cost-explorer-region us-east-1 \
+  --enable-bedrock --bedrock-region us-east-1 \
+  --bedrock-model us.anthropic.claude-sonnet-4-6
+```
+
+Com análise via Bedrock (local com perfil):
+
+```bash
+python3 scripts/export_monthly_costs.py --month 2026-03 \
+  --aws-profile prd-ciam --cost-explorer-region us-east-1 \
+  --enable-bedrock --bedrock-region us-east-1 \
+  --bedrock-model us.anthropic.claude-sonnet-4-6
+```
+
+Para gerar apenas os CSVs sem acionar a análise:
+
+```bash
+python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1 --skip-analysis
 ```
 
 Arquivos gerados:
@@ -498,8 +548,113 @@ Arquivos gerados:
 ```file system
 export_monthly/costs-prd-ciam-todos-servicos-2026-03.csv
 export_monthly/costs-prd-ciam-so-pdp-2026-03.csv
+output/monthly/relatorio_mensal_2026-03.txt
 ```
 
 Esse script usa o filtro de tag `aws:autoscaling:groupName` para:
 - gerar um arquivo com todos os serviços sem filtro
 - incluir apenas os grupos do PDP no arquivo `so-pdp`
+- ao concluir os CSVs, chamar `generate_monthly_analysis.py` automaticamente com os mesmos parâmetros de perfil e mês
+
+### Notificação por e-mail via SNS
+
+Ao passar `--sns-topic-arn` e `--s3-bucket`, o script faz upload dos arquivos para S3 e envia e-mail via SNS com links de download válidos por 7 dias.
+
+Estrutura dos arquivos no S3: `{prefix}/YYYY/MM/DD/HHmm/arquivo`
+
+Arquivos enviados no mensal:
+
+- `relatorio_mensal-YYYY-MM.txt`
+- `costs-prd-ciam-todos-servicos-YYYY-MM.csv`
+- `costs-prd-ciam-so-pdp-YYYY-MM.csv`
+
+```bash
+python3 scripts/export_monthly_costs.py --month 2026-04 \
+  --cost-explorer-region us-east-1 \
+  --enable-bedrock --bedrock-region us-east-1 \
+  --bedrock-model us.anthropic.claude-sonnet-4-6 \
+  --sns-topic-arn arn:aws:sns:us-east-1:123456789012:finops-relatorios \
+  --s3-bucket meu-bucket-finops \
+  --s3-prefix finops/relatorios/mensal
+```
+
+### Agendamento via cron (EC2 com IAM role)
+
+Use os wrappers `scripts/cron_daily.sh` e `scripts/cron_monthly.sh` — eles ativam o virtualenv, setam as variáveis de ambiente e constroem o comando automaticamente.
+
+**1. Edite as variáveis no topo do wrapper:**
+
+```bash
+# scripts/cron_daily.sh ou scripts/cron_monthly.sh
+PROJECT_DIR="/caminho/para/relatorio_aws_finops_ai"
+COST_EXPLORER_REGION="us-east-1"
+BEDROCK_REGION="us-east-1"
+BEDROCK_MODEL="us.anthropic.claude-sonnet-4-6"
+FINOPS_SNS_TOPIC_ARN="arn:aws:sns:us-east-1:123456789012:finops-relatorios"
+FINOPS_S3_BUCKET="meu-bucket-finops"
+```
+
+**2. Adicione ao crontab (`crontab -e`):**
+
+```cron
+# Relatório diário — todo dia às 08h
+0 8 * * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_daily.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_daily.log 2>&1
+
+# Relatório mensal — todo dia 5 do mês às 08h (gera o mês anterior automaticamente)
+0 8 5 * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_monthly.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_monthly.log 2>&1
+```
+
+**Uso manual do wrapper mensal com mês específico:**
+
+```bash
+bash scripts/cron_monthly.sh 2026-03
+```
+
+Observações:
+
+- os wrappers calculam o mês anterior automaticamente quando não é passado argumento
+- sem `AWS_PROFILE` preenchido, boto3 usa a role IAM da EC2
+- `FINOPS_SNS_TOPIC_ARN` e `FINOPS_S3_BUCKET` vazios desabilitam o envio SNS
+- logs separados por tipo: `cron_daily.log` e `cron_monthly.log`
+
+---
+
+## Análise mensal consolidada
+
+Para gerar um relatório TXT mensal com correlação de eventos e anomalias recorrentes, use:
+
+```bash
+python3 scripts/generate_monthly_analysis.py --month 2026-04 --aws-profile prd-ciam
+```
+
+Com análise via Bedrock:
+
+```bash
+python3 scripts/generate_monthly_analysis.py --month 2026-04 \
+  --aws-profile prd-ciam --bedrock-region us-east-1 \
+  --bedrock-model us.anthropic.claude-sonnet-4-6 --enable-bedrock
+```
+
+Pré-requisito: os CSVs mensais devem existir em `export_monthly/` (gerados pelo `export_monthly_costs.py`).
+
+Fontes usadas:
+
+- `export_monthly/costs-prd-ciam-todos-servicos-YYYY-MM.csv`
+- `export_monthly/costs-prd-ciam-so-pdp-YYYY-MM.csv`
+- `output/YYYY-MM-DD/*_bedrock_payload.json` — anomalias dos dias com análise diária
+- `prompts/assets/Régua de Pushs_SMS Now Online.xlsx` — calendário de eventos
+
+Arquivo gerado:
+
+```file system
+output/monthly/relatorio_mensal_YYYY-MM.txt
+```
+
+O relatório inclui:
+
+- Custo total, PDP e média diária do mês
+- Top serviços com barra visual de proporção
+- Tabela diária: custo × PDP × intensidade do evento (◆ = dia com GGG)
+- Anomalias recorrentes — serviços que apareceram em múltiplos dias de referência
+- Dias sem análise diária (gaps de cobertura de payload)
+- Narrativa executiva via Bedrock (quando `--enable-bedrock` estiver ativo)

@@ -254,7 +254,7 @@ Regras do ambiente:
 
 Importante:
 
-- a regua de push/eventos nao deve ser tratada como evidencia direta de custo ou contagem de AWS End User Messaging/SMS
+- a regua de push/eventos clarotv+ streaming nao deve ser tratada como evidencia direta de custo ou contagem de AWS End User Messaging/SMS
 - evento com push costuma ser sinal mais forte de pressao de negocio do que evento sem push
 
 ### EKS e EC2 Compute
@@ -354,14 +354,25 @@ Regra de leitura:
 
 ### SMS e End User Messaging
 
+AWS End User Messaging e usado exclusivamente para mensagens transacionais: OTP, MFA, confirmacoes de cadastro e reset de senha.
+Nao e usado para campanhas nem para comunicacao em massa.
+O servico cobre envios de SMS e e-mail transacional.
+NÃO deve ser relacionado a eventos clarotv+ streaming!!!
+
+Canais primarios: RTDM e MSE (ferramentas internas fora da AWS).
+AWS End User Messaging e acionado apenas como fallback quando os canais primarios falham.
+
 SMS deve ser lido com apoio de filas SQS conhecidas configuradas em `config.py`.
 
 Leitura esperada:
 
 - `NumberOfMessagesSent` e `NumberOfMessagesReceived` sao a evidencia operacional principal de volume
 - `ApproximateNumberOfMessagesVisible` e `ApproximateAgeOfOldestMessage` indicam backlog ou degradacao
-- crescimento organico de volume tende a ser `desvio esperado`
+- crescimento organico de volume tende a ser `desvio esperado` — reflete aumento de autenticacoes, cadastros ou resets
 - `anomalia real` em SMS exige sinais de fallback excessivo, falha, retries, backlog ou comportamento desproporcional
+- eventos do Claro TV+ normalmente nao tem relacao com envio de SMS — SMS e acionado por acoes do usuario (OTP, MFA, cadastro, reset), nao por audiencia ou programacao de broadcast
+- nunca associar variacao de End User Messaging a campanhas CRM, notificacoes push de eventos ou audiencia, eventos claro tv+ streaming; essa associacao esta incorreta neste ambiente
+- evidencia historica (abril/2026): 15 dias de anomalia de SMS com delta acumulado de -$119,60 (negativo) — as anomalias foram predominantemente quedas, nao altas; 7 dos 15 dias nao tinham nenhum evento GGG; 8 dias GGG do mes nao geraram anomalia de SMS; isso confirma que a volatilidade de SMS e intrinseca ao volume transacional, sem correlacao com eventos de audiencia
 
 ### Transit Gateway e servicos de rede
 
@@ -373,6 +384,9 @@ Para `TransitGateway-Bytes`:
 Para LCU, Transit Gateway e outros servicos de rede:
 
 - quando o comportamento acompanhar trafego legitimo, scaling agendado ou evento conhecido, a tendencia e `desvio esperado` ou `efeito em cascata`
+- LCU e consumo derivado do volume de requisicoes no ALB/NLB; quando LCU sobe junto com EC2/EKS em dia de evento Claro TV+, o driver real e o trafego de autenticacao e autorizacao, nao o load balancer em si — classifique como `efeito em cascata`
+- Quando ELB e EC2 subirem juntos no mesmo dia com evento relevante, trate-os como correlacionados pelo mesmo driver, nao como anomalias independentes
+- Transit Gateway e sinal fraco para correlacionar com eventos do Claro TV+ ou scaling de EKS; nao use como driver principal quando ELB e EC2 ja explicam o aumento
 
 ### NAT Gateway
 
@@ -460,16 +474,17 @@ Importante:
 ## Contexto para Bedrock
 
 - Ambiente AWS de CIAM com Ping Identity em EKS e Ping Directory em EC2.
-- PDP oscila mais em dias de eventos de streaming do Claro TV+; scaling costuma ser agendado e, em poucos casos, reativo.
+- PDP significa Policy Decision Point — componente de autorizacao do stack Ping Identity rodando em EKS. A sigla NUNCA deve ser expandida como "Plataforma de Distribuicao de Push" ou qualquer outra variacao; essa expansao esta incorreta e nao existe neste ambiente.
+- PDP (Policy Decision Point) oscila mais em dias de eventos de streaming do Claro TV+; scaling costuma ser agendado e, em poucos casos, reativo.
 - Ping Federate e Ping Access tambem oscilam com eventos, mas normalmente menos que o PDP.
 - Eventos e pushes do Claro TV+ devem ser usados como contexto de negocio para plays, autenticacao, autorizacao e scaling agendado; o nodegroup do EKS PDP tende fortemente, mas nao completamente, a ser utilizado em eventos do Claro TV+.
 - Sempre que mencionar eventos com relacao ao Claro TV+, deixe explicito que o contexto e do Claro TV+ para evitar confusoes com outros eventos ou atividades.
 - Eventos de pull acima do normal no ECR podem indicar que o cluster `prd-sso-ciam` esta sendo escalado para atender a demanda de eventos do Claro TV+ ou outro scaling.
 - O cluster EKS `prd-sso-ciam` hospeda Ping Access, Ping Federate e PDP.
-- O calendario de push/eventos nao deve ser usado como evidencia direta de custo ou volume de AWS End User Messaging/SMS.
+- O calendario de push/eventos clarotv+ streaming nao deve ser usado como evidencia direta de custo ou volume de AWS End User Messaging/SMS.
 - Ping Directory: `primary`, `secondary` e `ternary` atendem producao; `quaternary` fica fora do balanceamento e executa backup para S3, relatorios e limpeza de base LDAP.
 - `NatGateway-Bytes` costuma sofrer influencia de atividades de backup, mas nao tem correlacao direta com eventos do Claro TV+.
-- SMS e transacional; AWS End User Messaging e usado para fallback, nao campanha. RTDM e MSE, que sao ferramentas internas fora da AWS, sao os principais para envios; AWS End User Messaging so e usado se eles falham.
+- AWS End User Messaging e usado exclusivamente para mensagens transacionais: OTP, MFA, confirmacoes de cadastro e reset de senha. Cobre envios de SMS e e-mail transacional. AWS End User Messaging nao é usado para campanhas nem comunicacao em massa. Canais primarios sao RTDM e MSE (ferramentas internas fora da AWS); AWS End User Messaging so e acionado como fallback quando esses canais falham. Variacoes de custo em End User Messaging NAO devem ser associadas a eventos do Claro TV+ streaming, audiencia, notificacoes push de broadcast ou campanhas CRM — essas associacoes estao incorretas neste ambiente. Evidencia historica (abril/2026): anomalias de SMS tiveram delta acumulado negativo (-$119,60), ocorreram em dias sem GGG e estiveram ausentes em varios dias GGG — confirmando que a volatilidade e transacional e independente de eventos de audiencia.
 - Para CloudWatch Logs `DataScanned-Bytes`, priorize evidencias de queries executadas e metadados de consulta.
 - Execucoes manuais ou agendadas de queries no CloudWatch Logs podem gerar custos significativos dependendo do volume escaneado, mas fazem parte da operacao e investigacao.
 - No inicio do mes e na primeira semana podem ocorrer queries operacionais recorrentes no CloudWatch Logs para FinOps e reunioes de MBR.
@@ -478,7 +493,7 @@ Importante:
 - Existem buckets S3 com diferentes papeis, incluindo logs brutos do Ping, dados transformados para metricas de negocio e backup/exportacao do Ping Directory; entender o papel de cada bucket e crucial para correlacionar custos e atividades.
 - O time de dados costuma fazer queries de leitura em buckets de logs do Ping para gerar metricas e dashboards, mas atividades incomuns podem indicar problemas ou mudancas no comportamento do sistema.
 - GuardDuty monitora atividades suspeitas, mas os alertas devem ser correlacionados com outros dados operacionais para entender o contexto completo.
-- Load balancers usados pelo cluster EKS `prd-sso-ciam` tendem a ter alto consumo quando eventos do Claro TV+ acontecem, mas o load balancer interno de integracao com a Claro TV+ tem comportamento mais diretamente correlacionado com esses eventos.
+- Load balancers usados pelo cluster EKS `prd-sso-ciam` tendem a ter alto consumo quando eventos do Claro TV+ acontecem, mas o load balancer interno de integracao com a Claro TV+ tem comportamento mais diretamente correlacionado com esses eventos. LCU sobe como efeito derivado do volume de requisicoes — ELB e EC2 devem ser lidos como correlacionados pelo mesmo driver de trafego, nao como anomalias independentes. Transit Gateway e sinal fraco nesse processo e nao deve ser usado como driver principal quando ELB e EC2 ja explicam o aumento.
 - Houve stress test em `2026-04-15`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Eventos no Brasil como Black Friday, Dia das Maes, Natal, Copa do Mundo e Jogos Olimpicos tendem a aumentar a demanda e, consequentemente, a utilizacao dos recursos da plataforma.
 - Consultar usagetype e API operation do cost explorer para se aproximar da causa e dar uma resposta mais precisa sobre as anomalias, ou listar custo fora da curva.

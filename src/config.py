@@ -13,11 +13,22 @@ PROJECT_CONTEXT_FILE = os.path.join(PROJECT_ROOT, "PROJECT_CONTEXT.md")
 # Used by both the cost report pipeline and Bedrock analysis.
 # ============================================================
 
-AWS_PROFILE = "dev-ciam"
+# None = usa credenciais do ambiente (role EC2, variáveis de ambiente, etc.)
+# Sobrescrever com --aws-profile para execução local com perfil AWS CLI
+AWS_PROFILE = os.getenv("AWS_PROFILE") or None
 AWS_REGION = "us-east-1"
 COST_EXPLORER_REGION = os.getenv("COST_EXPLORER_REGION", "us-east-1")
 WORKLOAD_REGION = os.getenv("WORKLOAD_REGION", AWS_REGION)
 BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+
+# ============================================================
+# Notificação SNS + S3
+# Configurar via variável de ambiente ou sobrescrever com --sns-topic-arn / --s3-bucket
+# ============================================================
+SNS_TOPIC_ARN = os.getenv("FINOPS_SNS_TOPIC_ARN") or None
+S3_REPORT_BUCKET = os.getenv("FINOPS_S3_BUCKET") or None
+S3_REPORT_PREFIX_DAILY = os.getenv("FINOPS_S3_PREFIX_DAILY", "finops/relatorios/diario")
+S3_REPORT_PREFIX_MONTHLY = os.getenv("FINOPS_S3_PREFIX_MONTHLY", "finops/relatorios/mensal")
 
 # ============================================================
 # Shared Analysis Window
@@ -27,6 +38,7 @@ BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
 # Janela consolidada usada nas comparacoes do relatorio e no payload para a IA.
 ANALYSIS_DAYS = 7  # Quantos dias entram na janela consolidada.
 OFFSET_DAYS = 2    # Quantos dias voltar a partir de hoje para pegar o ultimo dia consolidado da AWS.
+REPORT_RETENTION_MONTHS = 13  # Meses de retenção de artefatos em output/ e export_monthly/ antes da limpeza automática.
 
 # ============================================================
 # Cost Report Configuration
@@ -72,11 +84,12 @@ S3_USAGE_FAMILY_SUMMARIES = {
 }
 
 # Output
-OUTPUT_DIR = "output"
-MONTHLY_EXPORT_OUTPUT_DIR = "export_monthly"
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+MONTHLY_EXPORT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "export_monthly")
 MONTHLY_EXPORT_ONLY_PDP_FILENAME = "costs-prd-ciam-so-pdp.csv"
 MONTHLY_EXPORT_ALL_SERVICES_FILENAME = "costs-prd-ciam-todos-servicos.csv"
 BUSINESS_EVENT_CALENDAR_FILE = os.path.join(
+    PROJECT_ROOT,
     "prompts",
     "assets",
     "Régua de Pushs_SMS Now Online.xlsx",

@@ -216,6 +216,21 @@ def main():
         "--bedrock-model",
         help="Override the Bedrock model ID for this execution",
     )
+    parser.add_argument(
+        "--sns-topic-arn",
+        default=config.SNS_TOPIC_ARN,
+        help="ARN do tópico SNS para envio do relatório por e-mail. Padrão: env FINOPS_SNS_TOPIC_ARN",
+    )
+    parser.add_argument(
+        "--s3-bucket",
+        default=config.S3_REPORT_BUCKET,
+        help="Bucket S3 para upload dos arquivos antes do envio SNS. Padrão: env FINOPS_S3_BUCKET",
+    )
+    parser.add_argument(
+        "--s3-prefix",
+        default=config.S3_REPORT_PREFIX_DAILY,
+        help=f"Prefixo S3 para organização dos arquivos. Padrão: {config.S3_REPORT_PREFIX_DAILY}",
+    )
 
     args = parser.parse_args()
 
@@ -232,6 +247,9 @@ def main():
         config.BEDROCK_REGION = args.bedrock_region
     if args.bedrock_model:
         config.BEDROCK_MODEL_ID = args.bedrock_model
+
+    # Limpeza de artefatos antigos (>13 meses) antes de iniciar a execução principal
+    utils.cleanup_old_reports()
 
     execution_logger = ExecutionLogger()
     txt_file = None
@@ -554,6 +572,26 @@ def main():
                 execution_logger,
                 extra=summary_extra,
             )
+
+        # Notificação SNS (opcional)
+        if args.sns_topic_arn and args.s3_bucket and txt_file:
+            try:
+                from integrations import notifier
+                ai_pdf = txt_file.replace(".txt", "_ai.pdf")
+                notifier.notify_daily_report(
+                    topic_arn=args.sns_topic_arn,
+                    bucket=args.s3_bucket,
+                    s3_prefix=args.s3_prefix,
+                    txt_path=txt_file,
+                    ai_pdf_path=ai_pdf if os.path.exists(ai_pdf) else None,
+                    aws_profile=config.AWS_PROFILE,
+                    aws_region=config.WORKLOAD_REGION,
+                    reference_day=ultimo_dia,
+                    avg_cost=custo_medio,
+                    variation_pct=variacao_media_pct,
+                )
+            except Exception as exc:
+                print(f"[notifier] AVISO: falha no envio SNS — {exc}")
 
 if __name__ == "__main__":
     main()
