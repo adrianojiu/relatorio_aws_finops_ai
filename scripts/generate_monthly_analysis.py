@@ -697,7 +697,6 @@ def main() -> None:
                 topic_arn=args.sns_topic_arn,
                 bucket=args.s3_bucket,
                 s3_prefix=args.s3_prefix,
-                txt_path=str(out_path),
                 csv_all_path=str(csv_all),
                 csv_pdp_path=str(csv_pdp),
                 aws_profile=args.aws_profile or None,

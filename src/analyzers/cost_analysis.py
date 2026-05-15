@@ -47,34 +47,40 @@ def calculate_service_variations(df_periodo, ultimo_dia):
 
     return df_var, aumentaram, reduziram, top_costs
 
-def build_sms_last_7_days(df, ultimo_dia):
+def build_sms_trend(df_sms_30d):
     """
-    Build SMS cost data for last 7 days
-    Returns: sms_por_dia, total_sms_7d, media_sms_7d
+    Build SMS cost trend from a pre-fetched 30-day DataFrame.
+    Recebe df com colunas ['Data', 'UsageType', 'Custo($)'] do fetch_sms_30d.
+    Returns:
+        sms_por_dia       — DataFrame diario agregado (para grafico)
+        total_sms_30d     — custo total no periodo
+        media_sms_30d     — media diaria (baseline para anomalia)
+        avg_30d_by_usage  — dict {usage_type: avg_diario} para rebase de anomalias
     """
-    from datetime import datetime, timedelta
-    servicos_sms = set(config.SPECIAL_SERVICES)
-    ultimo_dia_date = datetime.strptime(ultimo_dia, "%Y-%m-%d")
-    inicio_7d = (ultimo_dia_date - timedelta(days=6)).strftime("%Y-%m-%d")
-    fim_7d = ultimo_dia
+    if df_sms_30d is None or df_sms_30d.empty:
+        empty = pd.DataFrame(columns=["Data", "Custo($)"])
+        return empty, 0.0, 0.0, {}
 
-    df_sms_7d = df[
-        (df["Serviço"].isin(servicos_sms)) &
-        (df["Data"] >= inicio_7d) &
-        (df["Data"] <= fim_7d)
-    ].copy()
-
+    # Agrega por dia para o grafico
     sms_por_dia = (
-        df_sms_7d
+        df_sms_30d
         .groupby("Data")["Custo($)"]
         .sum()
         .reset_index()
         .sort_values("Data")
     )
 
-    total_sms_7d = sms_por_dia["Custo($)"].sum()
-    # Quando nao houver linhas de SMS no periodo, a media deve voltar como zero
-    # para evitar propagar NaN para o renderer e para os testes.
-    media_sms_7d = 0.0 if sms_por_dia.empty else sms_por_dia["Custo($)"].mean()
+    total_sms_30d = float(sms_por_dia["Custo($)"].sum())
+    media_sms_30d = 0.0 if sms_por_dia.empty else float(sms_por_dia["Custo($)"].mean())
 
-    return sms_por_dia, total_sms_7d, media_sms_7d
+    # Media diaria por usage_type — usada para rebase de anomalias
+    n_days = max(1, len(sms_por_dia))
+    avg_30d_by_usage = (
+        df_sms_30d
+        .groupby("UsageType")["Custo($)"]
+        .sum()
+        .div(n_days)
+        .to_dict()
+    )
+
+    return sms_por_dia, total_sms_30d, media_sms_30d, avg_30d_by_usage

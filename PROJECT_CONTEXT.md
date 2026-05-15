@@ -96,6 +96,7 @@ Saidas principais:
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.pdf`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.xlsx`
+- `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD.html`
 - `output/YYYY-MM-DD/execucao_<timestamp>.log`
 - `output/YYYY-MM-DD/execucao_<timestamp>.json`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_bedrock_payload.json`
@@ -171,6 +172,7 @@ Nao deve conter:
 Separacao atual:
 
 - TXT principal: foco executivo
+- HTML interativo (`*.html`): duas abas — visao de custos com graficos Chart.js e analise IA com cards coloridos por classificacao; gerado sempre, atualizado com IA se o Bedrock concluir
 - `*_bedrock_context.txt`: apoio tecnico de correlacao
 - `*_bedrock_payload.json`: payload real enviado para a IA
 - `*_bedrock_prompt.txt`: prompt final gerado

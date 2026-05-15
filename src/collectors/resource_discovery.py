@@ -10,6 +10,10 @@ import botocore
 import config
 from collectors import metrics_cloudwatch, metrics_messaging
 
+# Cache de resultados de _list_s3_buckets por (profile, region) para evitar relisting
+# entre anomalias da mesma execucao (S3 + GuardDuty listam os mesmos buckets).
+_s3_bucket_list_cache: dict = {}
+
 
 def _build_session():
     return boto3.Session(profile_name=config.AWS_PROFILE, region_name=config.WORKLOAD_REGION)
@@ -202,6 +206,15 @@ def _normalize_s3_bucket_region(location_constraint):
 
 
 def _list_s3_buckets(session):
+    """
+    Lista todos os buckets S3 com regiao e metrics filter ID resolvidos.
+    Resultado e cacheado por (profile, region) para evitar relisting entre
+    anomalias da mesma execucao (S3 + GuardDuty processam os mesmos buckets).
+    """
+    cache_key = (config.AWS_PROFILE or "", config.WORKLOAD_REGION or "")
+    if cache_key in _s3_bucket_list_cache:
+        return _s3_bucket_list_cache[cache_key]
+
     client = session.client("s3")
     response = client.list_buckets()
     resources = []
@@ -233,6 +246,7 @@ def _list_s3_buckets(session):
             item.get("resource_id") or "",
         )
     )
+    _s3_bucket_list_cache[cache_key] = resources
     return resources
 
 
@@ -1154,8 +1168,13 @@ def _should_collect_athena_query_activity(anomaly, candidate, metrics_summary):
     return False
 
 
-def _should_collect_s3_cloudtrail_activity(anomaly, candidate, metrics_summary):
+def _should_collect_s3_cloudtrail_activity(anomaly, candidate, metrics_summary, candidate_index=1):
     if candidate.get("resource_id") is None:
+        return False
+
+    # Limita CloudTrail aos primeiros N candidatos por anomalia para evitar latencia excessiva.
+    # Os candidatos iniciais sao os mais relevantes (buckets conhecidos e prioritarios).
+    if candidate_index > config.S3_CLOUDTRAIL_MAX_CANDIDATES:
         return False
 
     service_name = (anomaly.get("service") or "").lower()
@@ -1466,18 +1485,48 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             }
         ]
 
+    svc_label = f"{anomaly.get('service', '?')} | {anomaly.get('usage_type', '')}"
+    capped_candidates = candidates[: config.MAX_CANDIDATE_RESOURCES]
+    total_candidates = len(capped_candidates)
+    print(f"  [enrich] {svc_label} — {total_candidates} candidato(s) encontrado(s)")
+
+    # ------------------------------------------------------------------
+    # Passo 1: metricas + Athena + log group query.
+    # Para S3, coleta metricas CloudWatch apenas para candidatos com
+    # request_filter_id ou bucket_role (buckets instrumentados/conhecidos).
+    # Os demais entram no resultado sem metricas para preservar visibilidade,
+    # mas sem custo de API. CloudTrail e omitido aqui — feito no passo 2.
+    # ------------------------------------------------------------------
+    if resource_type == "s3_bucket":
+        # Separa candidatos instrumentados (tem metricas de request ou role conhecida)
+        # dos demais. So os instrumentados recebem chamada CloudWatch.
+        priority_candidates = [
+            c for c in capped_candidates
+            if c.get("derived_context", {}).get("s3_request_filter_id")
+            or c.get("derived_context", {}).get("bucket_role")
+        ]
+        stub_candidates = [c for c in capped_candidates if c not in priority_candidates]
+        print(f"  [enrich] {svc_label} — {len(priority_candidates)} com metricas, {len(stub_candidates)} sem metricas (sem API call)")
+        active_candidates = priority_candidates
+    else:
+        active_candidates = capped_candidates
+        stub_candidates = []
+
     enriched = []
-    for candidate in candidates[: config.MAX_CANDIDATE_RESOURCES]:
+    for cand_idx, candidate in enumerate(active_candidates, start=1):
+        cand_id = candidate.get("resource_id") or "?"
+        print(f"  [enrich] {svc_label} — candidato {cand_idx}/{len(active_candidates)}: {cand_id}")
         try:
+            print(f"  [enrich]   -> metricas CloudWatch...")
             metrics_summary = _collect_metrics(candidate, rule, start_date, end_date)
         except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
             metrics_summary = {}
         query_activity = []
         athena_query_activity = []
-        cloudtrail_s3_activity = None
         athena_lookup_attempted = False
         if resource_type == "log_group":
             try:
+                print(f"  [enrich]   -> log group query activity...")
                 query_activity = _collect_log_group_query_activity(
                     session=session,
                     log_group_name=candidate.get("resource_id"),
@@ -1493,6 +1542,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
         ):
             athena_lookup_attempted = True
             try:
+                print(f"  [enrich]   -> Athena query activity...")
                 athena_query_activity = _collect_athena_query_activity(
                     session=session,
                     bucket_name=candidate.get("resource_id"),
@@ -1501,22 +1551,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
                 )
             except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
                 athena_query_activity = []
-        if resource_type == "s3_bucket" and _should_collect_s3_cloudtrail_activity(
-            anomaly=anomaly,
-            candidate=candidate,
-            metrics_summary=metrics_summary,
-        ):
-            cloudtrail_s3_activity = _lookup_cloudtrail_s3_bucket_context(
-                session=session,
-                bucket_name=candidate.get("resource_id"),
-                target_dates=_determine_s3_cloudtrail_target_dates(anomaly, metrics_summary),
-                region_name=candidate.get("derived_context", {}).get("bucket_region") or config.WORKLOAD_REGION,
-            )
-        candidate_confidence = (
-            "medium"
-            if metrics_summary or query_activity or athena_query_activity or cloudtrail_s3_activity
-            else "low"
-        )
+
         candidate_payload = {
             "resource_type": resource_type,
             "resource_id": candidate.get("resource_id"),
@@ -1529,21 +1564,101 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
                 "anchor_day": anomaly.get("anchor_day"),
             },
             "anomaly_anchor_day": anomaly.get("anchor_day"),
-            "confidence": candidate_confidence,
+            "confidence": "medium" if metrics_summary or query_activity or athena_query_activity else "low",
             "metrics": metrics_summary,
             "query_activity": query_activity,
             "athena_query_activity": athena_query_activity,
-            "cloudtrail_s3_activity": cloudtrail_s3_activity,
+            "cloudtrail_s3_activity": None,
             "possible_impacted_services": rule.get("possible_impacted_services", []),
             "hypothesis": rule.get("hypothesis"),
+            "_athena_lookup_attempted": athena_lookup_attempted,
         }
-        notes = list(candidate.get("resource_notes", []))
+        candidate_payload["score"] = _score_resource_with_context(candidate_payload)
+        enriched.append(candidate_payload)
+
+    # Adiciona stubs de S3 sem metricas para preservar visibilidade no payload.
+    # Esses buckets nao receberam chamadas de API — score 0 e confidence low.
+    for candidate in stub_candidates:
+        stub_payload = {
+            "resource_type": resource_type,
+            "resource_id": candidate.get("resource_id"),
+            "resource_arn": candidate.get("resource_arn"),
+            "tags": candidate.get("tags", {}),
+            "derived_context": candidate.get("derived_context", {}),
+            "anomaly_context": {
+                "service": anomaly.get("service"),
+                "usage_type": anomaly.get("usage_type"),
+                "anchor_day": anomaly.get("anchor_day"),
+            },
+            "anomaly_anchor_day": anomaly.get("anchor_day"),
+            "confidence": "low",
+            "metrics": {},
+            "query_activity": [],
+            "athena_query_activity": [],
+            "cloudtrail_s3_activity": None,
+            "possible_impacted_services": rule.get("possible_impacted_services", []),
+            "hypothesis": rule.get("hypothesis"),
+            "_athena_lookup_attempted": False,
+            "score": 0.0,
+        }
+        enriched.append(stub_payload)
+
+    # Ordena por score preliminar (sem CloudTrail) para identificar os top N.
+    enriched.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+
+    # ------------------------------------------------------------------
+    # Passo 2: CloudTrail apenas para os top N candidatos por score.
+    # Garante que o lookup caro incide sobre quem realmente importa,
+    # independentemente da ordem de descoberta original.
+    # ------------------------------------------------------------------
+    if resource_type == "s3_bucket":
+        cloudtrail_budget = config.S3_CLOUDTRAIL_MAX_CANDIDATES
+        cloudtrail_done = 0
+        for payload in enriched:
+            if cloudtrail_done >= cloudtrail_budget:
+                break
+            metrics_summary = payload.get("metrics") or {}
+            if not _should_collect_s3_cloudtrail_activity(
+                anomaly=anomaly,
+                candidate={"resource_id": payload.get("resource_id"), "derived_context": payload.get("derived_context", {})},
+                metrics_summary=metrics_summary,
+            ):
+                continue
+            cand_id = payload.get("resource_id") or "?"
+            print(f"  [enrich]   -> CloudTrail S3 lookup ({cand_id}) [top {cloudtrail_done + 1}/{cloudtrail_budget}]...")
+            try:
+                cloudtrail_s3_activity = _lookup_cloudtrail_s3_bucket_context(
+                    session=session,
+                    bucket_name=payload.get("resource_id"),
+                    target_dates=_determine_s3_cloudtrail_target_dates(anomaly, metrics_summary),
+                    region_name=payload.get("derived_context", {}).get("bucket_region") or config.WORKLOAD_REGION,
+                )
+            except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
+                cloudtrail_s3_activity = None
+            payload["cloudtrail_s3_activity"] = cloudtrail_s3_activity
+            if cloudtrail_s3_activity:
+                payload["confidence"] = "medium"
+            # Re-pontua com CloudTrail incorporado para refletir evidencias novas.
+            payload["score"] = _score_resource_with_context(payload)
+            cloudtrail_done += 1
+
+        # Re-ordena apos CloudTrail atualizar os scores.
+        enriched.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+
+    # ------------------------------------------------------------------
+    # Monta notas finais e remove chave interna de controle.
+    # ------------------------------------------------------------------
+    for payload in enriched:
+        athena_lookup_attempted = payload.pop("_athena_lookup_attempted", False)
+        notes = list(payload.get("notes") or [])
+        metrics_summary = payload.get("metrics") or {}
         if not metrics_summary:
             notes.append("Nenhuma metrica encontrada para o recurso no periodo consolidado.")
-        if resource_type == "log_group" and not query_activity:
+        if resource_type == "log_group" and not payload.get("query_activity"):
             notes.append("Nenhum metadado de query do CloudWatch Logs foi encontrado no periodo consolidado.")
-        if resource_type == "s3_bucket" and athena_lookup_attempted and not athena_query_activity:
+        if resource_type == "s3_bucket" and athena_lookup_attempted and not payload.get("athena_query_activity"):
             notes.append("Nenhum metadado relevante de query do Athena foi encontrado para este bucket no periodo consolidado.")
+        cloudtrail_s3_activity = payload.get("cloudtrail_s3_activity")
         if (
             resource_type == "s3_bucket"
             and cloudtrail_s3_activity
@@ -1551,11 +1666,7 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
         ):
             notes.append("Nenhum evento relevante de CloudTrail para este bucket foi encontrado nas datas-alvo da anomalia.")
         if notes:
-            candidate_payload["notes"] = notes
-        candidate_payload["score"] = _score_resource_with_context(candidate_payload)
-        enriched.append(candidate_payload)
-
-    enriched.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+            payload["notes"] = notes
     if resource_type == "s3_bucket":
         resources_with_metrics = [item for item in enriched if item.get("metrics")]
         known_without_metrics = [

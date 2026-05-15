@@ -283,75 +283,73 @@ class TestCalculateServiceVariations:
 
 
 # ---------------------------------------------------------------------------
-# build_sms_last_7_days
+# build_sms_trend (baseline 30 dias)
 # ---------------------------------------------------------------------------
 
-class TestBuildSmsLast7Days:
-    """Testa agregacao de custos SMS dos ultimos 7 dias."""
+def _make_sms_30d_df(dates, costs, usage_type="OutboundSMS"):
+    """Helper: monta DataFrame no formato retornado por fetch_sms_30d."""
+    return pd.DataFrame({
+        "Data": dates,
+        "UsageType": [usage_type] * len(dates),
+        "Custo($)": costs,
+    })
+
+
+class TestBuildSmsTrend:
+    """Testa agregacao de custos SMS com baseline de 30 dias."""
 
     def test_basic_sms_aggregation(self):
-        """Deve agregar custo SMS por dia e calcular total e media."""
+        """Deve agregar custo SMS por dia e calcular total, media e avg_by_usage."""
         from analyzers import cost_analysis
 
-        df = pd.DataFrame({
-            "Data": [
-                "2026-04-04", "2026-04-05", "2026-04-06",
-                "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10",
-            ],
-            "Serviço": ["AWS End User Messaging"] * 7,
-            "UsageType": ["OutboundSMS"] * 7,
-            "Custo($)": [12.0, 14.0, 11.0, 13.0, 15.0, 10.0, 16.0],
-        })
+        datas = [f"2026-04-{d:02d}" for d in range(1, 8)]  # 7 dias de amostra
+        custos = [12.0, 14.0, 11.0, 13.0, 15.0, 10.0, 16.0]
+        df = _make_sms_30d_df(datas, custos)
 
-        sms_por_dia, total, media = cost_analysis.build_sms_last_7_days(df, "2026-04-10")
+        sms_por_dia, total, media, avg_by_usage = cost_analysis.build_sms_trend(df)
 
         assert len(sms_por_dia) == 7
-        assert total == 91.0  # 12+14+11+13+15+10+16
+        assert total == 91.0
         assert round(media, 2) == 13.0  # 91/7
+        assert "OutboundSMS" in avg_by_usage
+        assert round(avg_by_usage["OutboundSMS"], 2) == 13.0
 
     def test_sms_empty_no_data(self):
-        """Sem dados de SMS, retorna DataFrames vazios e totais zero."""
+        """Sem dados de SMS, retorna estruturas vazias e totais zero."""
         from analyzers import cost_analysis
 
-        df = pd.DataFrame({
-            "Data": ["2026-04-08"],
-            "Serviço": ["EC2"],
-            "Custo($)": [100.0],
-        })
+        sms_por_dia, total, media, avg_by_usage = cost_analysis.build_sms_trend(None)
 
-        sms_por_dia, total, media = cost_analysis.build_sms_last_7_days(df, "2026-04-10")
-
-        assert sms_por_dia.empty or len(sms_por_dia) == 0
+        assert sms_por_dia.empty
         assert total == 0.0
         assert media == 0.0
+        assert avg_by_usage == {}
 
-    def test_sms_only_relevant_services(self):
-        """Deve considerar apenas servicos em SPECIAL_SERVICES."""
+    def test_sms_multiple_usage_types(self):
+        """Deve calcular avg_by_usage separado por usage type."""
         from analyzers import cost_analysis
-        from src import config
 
         df = pd.DataFrame({
-            "Data": ["2026-04-10", "2026-04-10"],
-            "Serviço": ["End User Messaging", "EC2"],
-            "Custo($)": [30.0, 500.0],
+            "Data": ["2026-04-01", "2026-04-01", "2026-04-02", "2026-04-02"],
+            "UsageType": ["SMS-Fees", "SMS-Count", "SMS-Fees", "SMS-Count"],
+            "Custo($)": [10.0, 2.0, 20.0, 4.0],
         })
 
-        sms_por_dia, total, media = cost_analysis.build_sms_last_7_days(df, "2026-04-10")
+        sms_por_dia, total, media, avg_by_usage = cost_analysis.build_sms_trend(df)
 
-        # Apenas "End User Messaging" esta em SPECIAL_SERVICES
-        assert total == 30.0
+        assert total == 36.0
+        assert len(sms_por_dia) == 2  # 2 dias distintos
+        # avg por uso: SMS-Fees = (10+20)/2 = 15; SMS-Count = (2+4)/2 = 3
+        assert round(avg_by_usage["SMS-Fees"], 2) == 15.0
+        assert round(avg_by_usage["SMS-Count"], 2) == 3.0
 
     def test_sms_partial_window(self):
-        """Janela parcial (menos de 7 dias) deve funcionar."""
+        """Janela com poucos dias deve funcionar corretamente."""
         from analyzers import cost_analysis
 
-        df = pd.DataFrame({
-            "Data": ["2026-04-09", "2026-04-10"],
-            "Serviço": ["AWS End User Messaging"] * 2,
-            "Custo($)": [10.0, 20.0],
-        })
+        df = _make_sms_30d_df(["2026-04-09", "2026-04-10"], [10.0, 20.0])
 
-        sms_por_dia, total, media = cost_analysis.build_sms_last_7_days(df, "2026-04-10")
+        sms_por_dia, total, media, avg_by_usage = cost_analysis.build_sms_trend(df)
 
         assert len(sms_por_dia) == 2
         assert total == 30.0

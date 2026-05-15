@@ -1,8 +1,14 @@
+
+# Credenciais Google OAuth2 — nunca versionar
+client_secret.json
+token.json
+
 # Pasta de relatorios e csv
 relatorios/
 relatorios_costexplorer/
 csv/
 output/
+.continue/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

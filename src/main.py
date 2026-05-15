@@ -13,7 +13,7 @@ import config
 import utils
 from collectors import business_events, cost_explorer, csv_input
 from analyzers import cost_analysis, anomaly_detection, correlation_analysis
-from renderers import txt_report, excel_report, pdf_report
+from renderers import txt_report, excel_report, pdf_report, html_report
 from integrations import bedrock
 
 
@@ -169,9 +169,12 @@ def _read_text_file(path):
 
 def _confirm_business_event_calendar_is_updated():
     """
-    Fail closed when the operator cannot confirm that the business event calendar is current.
+    Se o operador confirmar que a planilha está atualizada, continua normalmente.
+    Se responder N, tenta baixar automaticamente do Google Drive e continua.
+    Falha fechada em modo não interativo (EOFError).
     """
     calendar_file = config.BUSINESS_EVENT_CALENDAR_FILE
+    gdrive_file_id = "1dS7E1dlskOqc1pXuBjpkQ7umfwAORAcj9BGkWCkZ5Gg"
     color_reset = "\033[0m"
     color_yellow = "\033[33m"
     color_cyan = "\033[36m"
@@ -181,8 +184,10 @@ def _confirm_business_event_calendar_is_updated():
     prompt = (
         f"\n{color_bold}{color_yellow}Confirmacao obrigatoria antes da execucao:{color_reset}\n"
         f"{color_cyan}Voce esta com uma versao atualizada do arquivo "
-        f"{color_green}{color_underline}'{calendar_file}'{color_reset}"
-        f"{color_cyan}? [s/N]: {color_reset}"
+        f"{color_green}{color_underline}'{calendar_file}'{color_reset}{color_cyan}?\n"
+        f"  {color_green}[s]{color_reset}{color_cyan} Sim, ja esta atualizada — continuar\n"
+        f"  {color_green}[N]{color_reset}{color_cyan} Nao — baixar agora do Google Drive e continuar\n"
+        f"{color_cyan}Confirmar [s/N]: {color_reset}"
     )
 
     try:
@@ -192,10 +197,33 @@ def _confirm_business_event_calendar_is_updated():
             "Nao foi possivel confirmar a atualizacao da planilha de eventos/push em modo nao interativo."
         ) from exc
 
-    if answer not in {"s", "sim", "y", "yes"}:
+    if answer in {"s", "sim", "y", "yes"}:
+        return
+
+    # Resposta N ou vazia: tenta baixar automaticamente do Google Drive
+    print(f"{color_yellow}[calendar] Baixando planilha do Google Drive...{color_reset}")
+    download_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "download_calendar.py")
+    dest = "prompts/assets/Régua de Pushs_SMS Now Online.xlsx"
+    credentials = "./client_secret.json"
+    token = "./token.json"
+
+    import subprocess
+    result = subprocess.run(
+        [
+            sys.executable, download_script,
+            "--file-id", gdrive_file_id,
+            "--dest", dest,
+            "--credentials", credentials,
+            "--token", token,
+        ],
+        capture_output=False,
+    )
+    if result.returncode != 0:
         raise RuntimeError(
-            "Execucao cancelada: confirme a atualizacao da planilha de eventos/push antes de gerar o relatorio."
+            "Falha ao baixar a planilha do Google Drive. "
+            "Verifique client_secret.json e token.json na raiz do projeto."
         )
+    print(f"{color_green}[calendar] Planilha atualizada com sucesso.{color_reset}")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate AWS Cost Reports")
@@ -363,9 +391,14 @@ def main():
             lambda: cost_analysis.calculate_service_variations(df_periodo, ultimo_dia),
         )
 
-        sms_por_dia, total_sms_7d, media_sms_7d = execution_logger.run_step(
-            "build_sms_last_7_days",
-            lambda: cost_analysis.build_sms_last_7_days(df, ultimo_dia),
+        df_sms_30d = execution_logger.run_step(
+            "fetch_sms_30d",
+            lambda: cost_explorer.fetch_sms_30d(ultimo_dia),
+        ) if args.source == "cost-explorer" else None
+
+        sms_por_dia, total_sms_30d, media_sms_30d, avg_30d_by_usage = execution_logger.run_step(
+            "build_sms_trend",
+            lambda: cost_analysis.build_sms_trend(df_sms_30d),
         )
 
         timeseries_df = execution_logger.run_step(
@@ -396,6 +429,12 @@ def main():
             "enrich_s3_tier_change_analysis",
             lambda: anomaly_detection.enrich_s3_tier_change_analysis(anomalies),
         )
+        # Rebase SMS baseline de 7 para 30 dias ANTES do filtro para que
+        # delta_usd/delta_pct reflitam a baseline correta na decisao de relevancia.
+        anomalies = execution_logger.run_step(
+            "rebase_sms_anomaly_baseline",
+            lambda: anomaly_detection.rebase_sms_anomaly_baseline(anomalies, avg_30d_by_usage),
+        )
         relevant_anomalies = execution_logger.run_step(
             "filter_relevant_anomalies",
             lambda: anomaly_detection.filter_relevant_anomalies(anomalies),
@@ -423,8 +462,8 @@ def main():
             "write_txt_report",
             lambda: txt_report.write_txt_report(
                 data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
-                aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_7d,
-                media_sms_7d, enriched_anomalies, daily_top_services, account_label
+                aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_30d,
+                media_sms_30d, enriched_anomalies, daily_top_services, account_label
             ),
         )
         pdf_file = txt_file.replace(".txt", ".pdf")
@@ -449,8 +488,8 @@ def main():
             "write_excel_report",
             lambda: excel_report.write_excel_report(
                 data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
-                aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_7d,
-                media_sms_7d, enriched_anomalies
+                aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_30d,
+                media_sms_30d, enriched_anomalies
             ),
         )
 
@@ -500,6 +539,18 @@ def main():
         print(f"Bedrock payload saved to {payload_file}")
         print(f"Bedrock prompt saved to {prompt_file}")
 
+        # HTML gerado após todos os artefatos de custo — aba de IA fica vazia até o Bedrock concluir
+        execution_logger.run_step(
+            "write_html_report",
+            lambda: html_report.write_html_report(
+                data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
+                aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_30d,
+                media_sms_30d, enriched_anomalies, daily_top_services, account_label,
+                ai_analysis=None,
+                custo_ultimo_dia=custo_ultimo_dia,
+            ),
+        )
+
         if config.ENABLE_BEDROCK:
             print(f"Using Bedrock model: {config.BEDROCK_MODEL_ID}")
             try:
@@ -529,6 +580,17 @@ def main():
                         ),
                     )
                     print(f"AI analysis PDF saved to {ai_pdf_file}")
+                    # Regenera o HTML com a análise de IA incorporada na aba 2
+                    execution_logger.run_step(
+                        "write_html_report_with_ai",
+                        lambda: html_report.write_html_report(
+                            data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
+                            aumentaram, reduziram, top_costs, daily_costs, sms_por_dia, total_sms_30d,
+                            media_sms_30d, enriched_anomalies, daily_top_services, account_label,
+                            ai_analysis=ai_analysis,
+                            custo_ultimo_dia=custo_ultimo_dia,
+                        ),
+                    )
                 meta_file = txt_file.replace(".txt", "_ai_meta.json")
                 execution_logger.run_step(
                     "write_ai_metadata",
@@ -573,17 +635,16 @@ def main():
                 extra=summary_extra,
             )
 
-        # Notificação SNS (opcional)
+        # Notificação SNS (opcional) — envia link para o HTML interativo
         if args.sns_topic_arn and args.s3_bucket and txt_file:
             try:
                 from integrations import notifier
-                ai_pdf = txt_file.replace(".txt", "_ai.pdf")
+                html_file = txt_file.replace(".txt", ".html")
                 notifier.notify_daily_report(
                     topic_arn=args.sns_topic_arn,
                     bucket=args.s3_bucket,
                     s3_prefix=args.s3_prefix,
-                    txt_path=txt_file,
-                    ai_pdf_path=ai_pdf if os.path.exists(ai_pdf) else None,
+                    html_path=html_file,
                     aws_profile=config.AWS_PROFILE,
                     aws_region=config.WORKLOAD_REGION,
                     reference_day=ultimo_dia,

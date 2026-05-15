@@ -658,3 +658,36 @@ def enrich_s3_tier_change_analysis(anomalies):
             updated_anomaly["s3_driver_analysis"] = _build_s3_driver_analysis(updated_anomaly)
         enriched.append(updated_anomaly)
     return enriched
+
+
+def rebase_sms_anomaly_baseline(anomalies, avg_30d_by_usage):
+    """
+    Substitui o baseline de 7 dias pelo de 30 dias para anomalias de SMS.
+    Recalcula delta_usd e delta_pct para refletir a nova baseline, reduzindo
+    falsos positivos causados por volatilidade transacional de curto prazo.
+    avg_30d_by_usage: dict {usage_type: media_diaria_30d}
+    """
+    sms_services = {s.lower() for s in config.SPECIAL_SERVICES}
+    updated = []
+    for anomaly in anomalies:
+        if anomaly.get("service", "").lower() not in sms_services:
+            updated.append(anomaly)
+            continue
+
+        usage_type = anomaly.get("usage_type", "")
+        avg_30d = avg_30d_by_usage.get(usage_type)
+        if avg_30d is None:
+            updated.append(anomaly)
+            continue
+
+        rebased = dict(anomaly)
+        cost_today = float(rebased.get("cost_today", 0.0) or 0.0)
+        delta_usd = cost_today - avg_30d
+        delta_pct = 0.0 if avg_30d == 0 else (delta_usd / avg_30d) * 100
+        rebased["avg_7d"] = round(avg_30d, 4)   # mantém chave por compatibilidade
+        rebased["baseline_days"] = config.SMS_ANALYSIS_DAYS
+        rebased["delta_usd"] = round(delta_usd, 4)
+        rebased["delta_pct"] = round(delta_pct, 2)
+        updated.append(rebased)
+
+    return updated

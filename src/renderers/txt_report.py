@@ -85,13 +85,13 @@ def write_bedrock_context_txt(base_txt_file, ultimo_dia, enriched_anomalies):
 
 def write_txt_report(data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
                      aumentaram, reduziram, top_costs, daily_costs=None, sms_por_dia=None,
-                     total_sms_7d=None, media_sms_7d=None, enriched_anomalies=None,
+                     total_sms_30d=None, media_sms_30d=None, enriched_anomalies=None,
                      daily_top_services=None, account_label=None):
     """
     Write TXT report
     """
     output_dir = utils.ensure_output_dir()
-    output_txt = os.path.join(output_dir, utils.get_output_filename("relatorio_custos", "txt"))
+    output_txt = os.path.join(output_dir, utils.get_output_filename("aws-relatorio-custos", "txt"))
 
     def format_row(svc, var_usd, var_pct):
         return f"{svc.ljust(28)} {str(var_usd).rjust(10)} {str(var_pct).rjust(10)}"
@@ -134,12 +134,13 @@ def write_txt_report(data_inicio, data_fim, ultimo_dia, custo_medio, variacao_me
             f.write(f"{i}. {svc.replace('($)','')}: US$ {val:,.2f}\n")
 
         # SMS if available
-        if sms_por_dia is not None:
-            f.write(f"\n\nAWS End User Messaging – Últimos 7 dias:\n\n")
+        if sms_por_dia is not None and not sms_por_dia.empty:
+            import config as _cfg
+            f.write(f"\n\nAWS End User Messaging – Últimos {_cfg.SMS_ANALYSIS_DAYS} dias:\n\n")
             for _, row in sms_por_dia.iterrows():
                 f.write(f"{row['Data']}: US$ {row['Custo($)']:,.2f}\n")
-            f.write(f"\nTotal últimos 7 dias: US$ {total_sms_7d:,.2f}\n")
-            f.write(f"Média diária (7 dias): US$ {media_sms_7d:,.2f}\n")
+            f.write(f"\nTotal {_cfg.SMS_ANALYSIS_DAYS} dias: US$ {total_sms_30d:,.2f}\n")
+            f.write(f"Média diária ({_cfg.SMS_ANALYSIS_DAYS} dias): US$ {media_sms_30d:,.2f}\n")
 
         if daily_top_services:
             f.write(f"\n\nTop {config.TOP_N_DAILY_SERVICES} serviços por dia na janela:\n\n")

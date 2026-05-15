@@ -59,6 +59,7 @@ TOP_N_PERIOD_CONTEXT_ITEMS = 20  # Quantos itens enviar para os rankings globais
 
 # Service-specific report handling
 SPECIAL_SERVICES = ["AWS End User Messaging", "End User Messaging"]
+SMS_ANALYSIS_DAYS = 30  # Janela de baseline para anomalias e exibicao de SMS (dias). Maior janela reduz falsos positivos por volatilidade transacional.
 SMS_COMPLEMENTARY_USAGE_TYPE_PATTERNS = [
     "OutboundSMS-BR-Standard-Sharedroute-MessageCount",
     "DeliveryAttempts-SMS",
@@ -160,6 +161,7 @@ S3_CLOUDTRAIL_MAX_MATCHES = 5  # Quantos eventos exemplares entram no resumo fin
 S3_CLOUDTRAIL_MAX_SUMMARY_ITEMS = 3  # Quantos itens mostrar em rankings como top atores e top eventos.
 S3_CLOUDTRAIL_TODAY_TO_AVG_RATIO = 1.05  # Gatilho minimo para consultar CloudTrail: hoje >= 105% da media.
 S3_CLOUDTRAIL_PEAK_LOOKBACK_DAYS = 2  # Permite olhar tambem o pico recente de AllRequests quando ele ocorreu ate 2 dias antes.
+S3_CLOUDTRAIL_MAX_CANDIDATES = 5  # Limite de candidatos que recebem CloudTrail lookup por anomalia S3/GuardDuty; os demais recebem apenas metricas.
 S3_TIER_CHANGE_MIN_VARIATION_USD = 3.0  # Sinal minimo de custo para tratar storage/tier como evidência material.
 S3_TIER_CHANGE_MIN_VARIATION_PCT = 5.0  # Percentual minimo para evitar classificar storage quase estavel como mudanca de tier.
 S3_CLOUDTRAIL_TIER_EVENT_NAMES = {

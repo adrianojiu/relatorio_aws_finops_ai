@@ -3,8 +3,11 @@ Notificação via SNS com upload de arquivos para S3.
 
 Fluxo:
   1. Faz upload dos arquivos para S3 em path organizado por YYYY/MM/DD/HHmm/
-  2. Gera presigned URLs válidas por 7 dias (604800 segundos)
+  2. Gera presigned URLs válidas por 30 dias (2592000 segundos)
   3. Publica mensagem no tópico SNS com resumo + links de download
+
+Diário : envia apenas o HTML interativo do relatório
+Mensal : envia apenas os dois CSVs (todos os serviços + somente PDP)
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from typing import Optional
 import boto3
 from botocore.config import Config as BotoConfig
 
-PRESIGNED_URL_EXPIRY_SECONDS = 7 * 24 * 3600  # 7 dias
+PRESIGNED_URL_EXPIRY_SECONDS = 30 * 24 * 3600  # 30 dias
 
 
 def _s3_client(aws_profile: Optional[str], region: str):
@@ -44,7 +47,7 @@ def upload_file(
     aws_profile: Optional[str],
     region: str,
 ) -> str:
-    """Faz upload do arquivo e retorna a presigned URL válida por 7 dias."""
+    """Faz upload do arquivo e retorna a presigned URL válida por 30 dias."""
     client = _s3_client(aws_profile, region)
     client.upload_file(local_path, bucket, s3_key)
     url = client.generate_presigned_url(
@@ -70,28 +73,18 @@ def notify_daily_report(
     topic_arn: str,
     bucket: str,
     s3_prefix: str,
-    txt_path: str,
-    ai_pdf_path: Optional[str],
+    html_path: str,
     aws_profile: Optional[str],
     aws_region: str,
     reference_day: str,
     avg_cost: float,
     variation_pct: float,
 ) -> None:
-    """Envia notificação do relatório diário com links para TXT e PDF da IA."""
+    """Envia notificação do relatório diário com link para o HTML interativo."""
     ts = datetime.now()
-    links: list[str] = []
 
-    # Upload TXT principal
-    txt_key = _s3_key(s3_prefix, Path(txt_path).name, ts)
-    txt_url = upload_file(txt_path, bucket, txt_key, aws_profile, aws_region)
-    links.append(f"  Relatório TXT : {txt_url}")
-
-    # Upload PDF da IA (opcional)
-    if ai_pdf_path and Path(ai_pdf_path).exists():
-        pdf_key = _s3_key(s3_prefix, Path(ai_pdf_path).name, ts)
-        pdf_url = upload_file(ai_pdf_path, bucket, pdf_key, aws_profile, aws_region)
-        links.append(f"  Análise IA PDF: {pdf_url}")
+    html_key = _s3_key(s3_prefix, Path(html_path).name, ts)
+    html_url = upload_file(html_path, bucket, html_key, aws_profile, aws_region)
 
     variation_sign = "+" if variation_pct >= 0 else ""
     subject = f"[FinOps CIAM] Relatório Diário — {reference_day}"
@@ -100,9 +93,8 @@ def notify_daily_report(
         f"{'=' * 60}\n\n"
         f"  Média diária  : USD {avg_cost:,.2f}\n"
         f"  Variação média: {variation_sign}{variation_pct:.1f}%\n\n"
-        f"Arquivos disponíveis (links válidos por 7 dias):\n"
-        + "\n".join(links)
-        + "\n\n"
+        f"Relatório HTML (link válido por 30 dias):\n"
+        f"  {html_url}\n\n"
         f"Caminho S3: s3://{bucket}/{_s3_key(s3_prefix, '', ts).rstrip('/')}/\n"
     )
     _publish_sns(topic_arn, subject, message, aws_profile, aws_region)
@@ -113,7 +105,6 @@ def notify_monthly_report(
     topic_arn: str,
     bucket: str,
     s3_prefix: str,
-    txt_path: str,
     csv_all_path: str,
     csv_pdp_path: str,
     aws_profile: Optional[str],
@@ -123,12 +114,11 @@ def notify_monthly_report(
     pdp_cost: float,
     avg_daily: float,
 ) -> None:
-    """Envia notificação do relatório mensal com links para TXT + 2 CSVs."""
+    """Envia notificação do relatório mensal com links para os dois CSVs."""
     ts = datetime.now()
     links: list[str] = []
 
     for label, path in [
-        ("Análise mensal (TXT)", txt_path),
         ("CSV todos os serviços", csv_all_path),
         ("CSV somente PDP     ", csv_pdp_path),
     ]:
@@ -143,7 +133,7 @@ def notify_monthly_report(
         f"  Custo total   : USD {total_cost:,.2f}\n"
         f"  Custo PDP     : USD {pdp_cost:,.2f} ({pdp_cost / total_cost * 100:.1f}% do total)\n"
         f"  Média diária  : USD {avg_daily:,.2f}\n\n"
-        f"Arquivos disponíveis (links válidos por 7 dias):\n"
+        f"Arquivos disponíveis (links válidos por 30 dias):\n"
         + "\n".join(links)
         + "\n\n"
         f"Caminho S3: s3://{bucket}/{_s3_key(s3_prefix, '', ts).rstrip('/')}/\n"

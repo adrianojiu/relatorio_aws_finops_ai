@@ -173,6 +173,47 @@ def fetch_service_operations_from_cost_explorer(data_inicio, data_fim, services=
 
     return pd.DataFrame(rows)
 
+def fetch_sms_30d(ultimo_dia):
+    """
+    Fetch SMS_ANALYSIS_DAYS days of End User Messaging costs grouped by usage type.
+    Usado para calcular o baseline de 30 dias de SMS, reduzindo falsos positivos
+    causados pela volatilidade transacional (OTP/MFA/reset de senha).
+    Returns: DataFrame com colunas ['Data', 'UsageType', 'Custo($)']
+    """
+    end_date = datetime.strptime(ultimo_dia, "%Y-%m-%d")
+    start_date = end_date - timedelta(days=config.SMS_ANALYSIS_DAYS - 1)
+    data_inicio = start_date.strftime("%Y-%m-%d")
+    # Cost Explorer end date e exclusivo — avanca um dia
+    data_fim_exclusiva = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    print(f"Coletando SMS (End User Messaging) de {data_inicio} até {ultimo_dia} ({config.SMS_ANALYSIS_DAYS} dias)...")
+
+    ce = _build_cost_explorer_client()
+    request_params = {
+        "TimePeriod": {"Start": data_inicio, "End": data_fim_exclusiva},
+        "Granularity": "DAILY",
+        "Metrics": ["UnblendedCost"],
+        "GroupBy": [
+            {"Type": "DIMENSION", "Key": "SERVICE"},
+            {"Type": "DIMENSION", "Key": "USAGE_TYPE"},
+        ],
+        "Filter": _build_cost_filter(included_services=list(config.SPECIAL_SERVICES)),
+    }
+
+    rows = []
+    for day in _iter_cost_and_usage_results(ce, request_params):
+        date = day["TimePeriod"]["Start"]
+        for group in day["Groups"]:
+            keys = group.get("Keys", [])
+            usage_type = keys[1] if len(keys) > 1 else "Unknown"
+            amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
+            rows.append({"Data": date, "UsageType": usage_type, "Custo($)": amount})
+
+    if not rows:
+        return pd.DataFrame(columns=["Data", "UsageType", "Custo($)"])
+    return pd.DataFrame(rows)
+
+
 def fetch_costs_from_cost_explorer(data_inicio, data_fim):
     """
     Fetch cost data from AWS Cost Explorer

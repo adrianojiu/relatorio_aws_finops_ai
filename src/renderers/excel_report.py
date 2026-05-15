@@ -10,12 +10,12 @@ import utils
 
 def write_excel_report(data_inicio, data_fim, ultimo_dia, custo_medio, variacao_media,
                        aumentaram, reduziram, top_costs, daily_costs=None, sms_por_dia=None,
-                       total_sms_7d=None, media_sms_7d=None, enriched_anomalies=None):
+                       total_sms_30d=None, media_sms_30d=None, enriched_anomalies=None):
     """
     Write Excel report
     """
     output_dir = utils.ensure_output_dir()
-    output_file = os.path.join(output_dir, utils.get_output_filename("relatorio_custos", "xlsx"))
+    output_file = os.path.join(output_dir, utils.get_output_filename("aws-relatorio-custos", "xlsx"))
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -79,8 +79,9 @@ def write_excel_report(data_inicio, data_fim, ultimo_dia, custo_medio, variacao_
         ws.append(["Data", "Custo US$"])
         for _, row in sms_por_dia.iterrows():
             ws.append([row["Data"], round(row["Custo($)"], 2)])
-        ws.append(["Total últimos 7 dias", round(total_sms_7d, 2)])
-        ws.append(["Média diária (7 dias)", round(media_sms_7d, 2)])
+        import config as _cfg
+        ws.append([f"Total {_cfg.SMS_ANALYSIS_DAYS} dias", round(total_sms_30d or 0.0, 2)])
+        ws.append([f"Média diária ({_cfg.SMS_ANALYSIS_DAYS} dias)", round(media_sms_30d or 0.0, 2)])
 
     if enriched_anomalies:
         linha = ws.max_row + 2

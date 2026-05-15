@@ -2,7 +2,7 @@
 Correlate cost anomalies with AWS resources and prepare Bedrock payloads.
 """
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 from mappings.correlation_rules import find_rule_for_service
@@ -198,21 +198,38 @@ def _enrich_single_anomaly(anomaly, start_date, end_date, anchor_day, enable_aws
 def enrich_anomalies(anomalies, start_date, end_date, anchor_day, enable_aws_lookup=True):
     """
     Attach correlation rules, candidate AWS resources and metrics to anomalies.
+    Imprime progresso por anomalia para visibilidade durante execucoes longas.
     """
-    # Keep a small pool to reduce wall time without overwhelming AWS APIs or changing ranking order.
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        enriched = list(
-            executor.map(
-                lambda anomaly: _enrich_single_anomaly(
-                    anomaly,
-                    start_date=start_date,
-                    end_date=end_date,
-                    anchor_day=anchor_day,
-                    enable_aws_lookup=enable_aws_lookup,
-                ),
-                anomalies,
-            )
-        )
+    total = len(anomalies)
+    # 4 workers: anomalias independentes rodam em paralelo; I/O bound (AWS API).
+    workers = min(4, max(1, total))
+    print(f"[resource_enrichment] iniciando enriquecimento de {total} anomalia(s) com {workers} workers paralelos...")
+
+    # Submete todas as tarefas preservando o indice para reordenar no final.
+    results_by_index = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                _enrich_single_anomaly,
+                anomaly,
+                start_date=start_date,
+                end_date=end_date,
+                anchor_day=anchor_day,
+                enable_aws_lookup=enable_aws_lookup,
+            ): (idx, anomaly)
+            for idx, anomaly in enumerate(anomalies)
+        }
+        completed = 0
+        for future in as_completed(futures):
+            idx, anomaly = futures[future]
+            results_by_index[idx] = future.result()
+            completed += 1
+            svc = anomaly.get("service", "?")
+            usage = anomaly.get("usage_type", "")
+            print(f"[resource_enrichment] {completed}/{total} concluido: {svc} | {usage}")
+
+    # Reordena para preservar a ordem original das anomalias.
+    enriched = [results_by_index[i] for i in range(total)]
     enriched = _attach_s3_guardduty_correlations(enriched)
     return _attach_s3_tier_cloudtrail_context(enriched)
 

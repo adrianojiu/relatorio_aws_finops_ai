@@ -79,30 +79,42 @@ Para quem quer bater o olho e já executar sem ler tudo:
    pip install -r requirements.txt
    ```
 
-2. **Gerar o relatório diário com IA**
+2. **Baixar a planilha de eventos do Google Drive**
+   Necessário ter `client_secret.json` e `token.json` na raiz do projeto (gerados via `setup_gdrive_auth.py`).
+   O `run.py` oferece o download automaticamente ao perguntar sobre a planilha — basta responder `N`.
+   Para baixar manualmente antes de rodar:
+   ```bash
+   python3 scripts/download_calendar.py \
+     --file-id     "1dS7E1dlskOqc1pXuBjpkQ7umfwAORAcj9BGkWCkZ5Gg" \
+     --dest        "prompts/assets/Régua de Pushs_SMS Now Online.xlsx" \
+     --credentials "./client_secret.json" \
+     --token       "./token.json"
+   ```
+
+3. **Gerar o relatório diário com IA**
    ```bash
    python3 run.py --aws-profile prd-ciam --aws-region sa-east-1 --cost-explorer-region us-east-1 --bedrock-region us-east-1 --enable-bedrock --bedrock-model us.anthropic.claude-sonnet-4-6
    ```
 
-3. **Gerar o relatório mensal com todos os serviços e somente PDP**
+4. **Gerar o relatório mensal com todos os serviços e somente PDP**
    ```bash
    python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```
 
-4. **Onde ajustar contexto e instruções**
+5. **Onde ajustar contexto e instruções**
    - contexto de negócio e operação: [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
    - instruções para agentes/IA: [`AGENTS.md`](./AGENTS.md)
    - prompt principal do relatório: [`prompts/finops_analysis.txt`](./prompts/finops_analysis.txt)
    - configuração técnica e métricas: [`src/config.py`](./src/config.py)
 
 
-5. **Arquivo de eventos Clarotv+**
+6. **Arquivo de eventos Clarotv+**
    - `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`
-   - A execucao do `run.py` agora pergunta obrigatoriamente se voce esta com uma versao atualizada desse arquivo antes de continuar.
-   - Se a resposta for negativa, vazia ou se nao houver confirmacao explicita, a execucao e cancelada.
-   - Em situacoes excepcionais ou automacoes, e possivel pular essa etapa com `--skip-calendar-confirmation`.
-   - Mantenha esse arquivo atualizado na pasta do projeto antes de rodar o relatorio para preservar a qualidade da correlacao de negocio.
-   - Este arquivo é provido pelo time do claro tv e esta em um google drive do mesmo time.
+   - Antes de iniciar, o `run.py` pergunta se a planilha está atualizada:
+     - Resposta `s` → continua normalmente
+     - Resposta `N` ou Enter → baixa automaticamente do Google Drive e continua (requer `client_secret.json` e `token.json` na raiz)
+   - Em automações (cron), use `--skip-calendar-confirmation` — o `cron_daily.sh` já faz o download antes de rodar
+   - Este arquivo é provido pelo time do Claro TV+ e está no Google Drive do mesmo time
 
 
 Esse `Quickstart` é um atalho. Os detalhes completos continuam nas seções abaixo.
@@ -122,7 +134,9 @@ relatorio-custo-aws/
 │   ├── cron_daily.sh              # Wrapper para agendamento do relatório diário
 │   ├── cron_monthly.sh            # Wrapper para agendamento do relatório mensal
 │   ├── export_monthly_costs.py    # Exporta CSVs mensais e aciona análise mensal
-│   └── generate_monthly_analysis.py  # Gera análise mensal consolidada
+│   ├── generate_monthly_analysis.py  # Gera análise mensal consolidada
+│   ├── download_calendar.py       # Baixa a planilha de eventos do Google Drive (usado pelo cron)
+│   └── setup_gdrive_auth.py       # Autenticação OAuth2 Google — roda UMA VEZ localmente
 ├── src/                           # Código fonte modular
 │   ├── main.py                    # Ponto de entrada principal
 │   ├── config.py                  # Configurações centralizadas
@@ -184,6 +198,9 @@ relatorio-custo-aws/
   - `boto3`
   - `pandas`
   - `openpyxl`
+  - `google-auth`
+  - `google-auth-oauthlib`
+  - `google-api-python-client`
 - AWS CLI configurado com um profile válido quando for usar `--aws-profile`
 - Acesso de rede à AWS nas regiões usadas pela execução
 
@@ -363,7 +380,16 @@ Observações:
    - Se aparecer erro dizendo que `on-demand throughput isn’t supported`, troque para o `inferenceProfileId`
    - Em geral, modelos Anthropic mais novos no seu ambiente devem ser chamados por inference profile
 
-18. **Notas operacionais importantes:**
+18. **Relatório HTML interativo:**
+
+   O projeto gera automaticamente `relatorio_custos_YYYY-MM-DD.html` com duas abas:
+
+   - **Aba "Visão Geral"**: gráficos interativos de custos diários (Chart.js), tabelas de variação de serviços, top N serviços, evolução do SMS e top serviços por dia
+   - **Aba "Análise IA"**: cards coloridos por classificação (Anomalia Real / Desvio Esperado / Efeito em Cascata), resumo executivo, drivers analisados e recomendações
+   - O HTML é gerado sem análise de IA inicialmente; se o Bedrock estiver ativo e concluir, o HTML é regenerado com a aba de IA preenchida
+   - O arquivo é independente (CSS e JS inline), apenas Chart.js é carregado via CDN
+
+1. **Notas operacionais importantes:**
    - O relatório sempre gera `*_bedrock_payload.json` e `*_bedrock_prompt.txt`, mesmo sem chamar o Bedrock
    - Se a chamada ao modelo falhar, o processo salva `*_ai_error.txt` no `output`
    - A execucao agora gera `execucao_<timestamp>.log` em tempo real e `execucao_<timestamp>.json` com o resumo estruturado da execucao
@@ -484,6 +510,7 @@ Em uma execução típica, o projeto gera artefatos como:
 output/2026-04-09/relatorio_custos_2026-04-09.txt
 output/2026-04-09/relatorio_custos_2026-04-09.pdf
 output/2026-04-09/relatorio_custos_2026-04-09.xlsx
+output/2026-04-09/relatorio_custos_2026-04-09.html
 output/2026-04-09/execucao_2026-04-09T08-47-11.log
 output/2026-04-09/execucao_2026-04-09T08-47-11.json
 output/2026-04-09/relatorio_custos_2026-04-09_bedrock_context.txt
@@ -495,12 +522,15 @@ output/2026-04-09/relatorio_custos_2026-04-09_ai_meta.json
 ```
 
 Observações:
+
+- `relatorio_custos_YYYY-MM-DD.html` é gerado em toda execução com duas abas interativas: visão de custos com gráficos Chart.js e análise IA com cards coloridos por classificação; quando o Bedrock conclui, o HTML é regenerado com a aba de IA preenchida
 - `relatorio_custos_YYYY-MM-DD.pdf` agora é gerado junto com o TXT principal e preserva o texto original, adicionando gráficos visuais de apoio para leitura mais intuitiva
 - `*_ai.txt`, `*_ai.pdf` e `*_ai_meta.json` só existem quando a análise Bedrock está habilitada e conclui a execução
 - `*_ai_error.txt` pode ser gerado quando houver falha na chamada ao modelo
 - `execucao_<timestamp>.log` é atualizado durante a execucao e ajuda a identificar a etapa exata de lentidao ou falha
 - `execucao_<timestamp>.json` consolida status, duracao e etapas mesmo quando o relatorio principal nao chega a ser gerado
 - os arquivos ficam agrupados por data para facilitar comparação e histórico
+- quando `FINOPS_SNS_TOPIC_ARN` e `FINOPS_S3_BUCKET` estão configurados, o HTML do diário é automaticamente enviado por e-mail via SNS com link S3 válido por **30 dias**; para o mensal, os dois CSVs são enviados da mesma forma
 
 ---
 
@@ -616,15 +646,16 @@ Esse script usa o filtro de tag `aws:autoscaling:groupName` para:
 
 ### Notificação por e-mail via SNS
 
-Ao passar `--sns-topic-arn` e `--s3-bucket`, o script faz upload dos arquivos para S3 e envia e-mail via SNS com links de download válidos por 7 dias.
+Ao passar `--sns-topic-arn` e `--s3-bucket`, o script faz upload dos arquivos para S3 e envia e-mail via SNS com links de download válidos por **30 dias**.
 
 Estrutura dos arquivos no S3: `{prefix}/YYYY/MM/DD/HHmm/arquivo`
 
-Arquivos enviados no mensal:
+Arquivos enviados:
 
-- `relatorio_mensal-YYYY-MM.txt`
-- `costs-prd-ciam-todos-servicos-YYYY-MM.csv`
-- `costs-prd-ciam-so-pdp-YYYY-MM.csv`
+- **Diário**: apenas o HTML interativo (`relatorio_custos_YYYY-MM-DD.html`)
+- **Mensal**: apenas os dois CSVs:
+  - `costs-prd-ciam-todos-servicos-YYYY-MM.csv`
+  - `costs-prd-ciam-so-pdp-YYYY-MM.csv`
 
 ```bash
 python3 scripts/export_monthly_costs.py --month 2026-04 \
@@ -636,30 +667,85 @@ python3 scripts/export_monthly_costs.py --month 2026-04 \
   --s3-prefix finops/relatorios/mensal
 ```
 
+### Planilha de eventos (Google Drive)
+
+A planilha `prompts/assets/Régua de Pushs_SMS Now Online.xlsx` é provida pelo time do Claro TV+ via Google Drive e deve estar sempre atualizada antes de gerar o relatório.
+
+#### Setup de credenciais (uma vez, na máquina local)
+
+```bash
+# Autenticar — abre o navegador para login com sua conta Google pessoal
+python3 scripts/setup_gdrive_auth.py --credentials ./client_secret.json
+```
+
+Isso gera `token.json` na raiz do projeto. Os dois arquivos necessários são:
+
+| Arquivo | Onde obter |
+| --- | --- |
+| `client_secret.json` | Baixar do Google Cloud Console (OAuth2 → App para computador) |
+| `token.json` | Gerado pelo `setup_gdrive_auth.py` na primeira autenticação |
+
+Ambos ficam na **raiz do projeto** e estão no `.gitignore` — nunca devem ser versionados.
+
+#### Uso local
+
+Ao rodar `run.py`, o sistema pergunta se a planilha está atualizada:
+
+- Resposta `s` → continua com a planilha existente
+- Resposta `N` ou Enter → baixa automaticamente do Google Drive e continua
+
+Para baixar manualmente a qualquer momento:
+
+```bash
+python3 scripts/download_calendar.py \
+  --file-id     "1dS7E1dlskOqc1pXuBjpkQ7umfwAORAcj9BGkWCkZ5Gg" \
+  --dest        "prompts/assets/Régua de Pushs_SMS Now Online.xlsx" \
+  --credentials "./client_secret.json" \
+  --token       "./token.json"
+```
+
+#### Uso na EC2 (cron)
+
+Copie os dois arquivos de credenciais para a **raiz do projeto na EC2**:
+
+```bash
+scp client_secret.json ec2-user@<ip-da-ec2>:/caminho/do/projeto/
+scp token.json         ec2-user@<ip-da-ec2>:/caminho/do/projeto/
+```
+
+O `cron_daily.sh` executa o download automaticamente antes de cada relatório — nenhuma configuração adicional é necessária além dos dois arquivos acima.
+
+---
+
 ### Agendamento via cron (EC2 com IAM role)
 
-Use os wrappers `scripts/cron_daily.sh` e `scripts/cron_monthly.sh` — eles ativam o virtualenv, setam as variáveis de ambiente e constroem o comando automaticamente.
+Use os wrappers `scripts/cron_daily.sh` e `scripts/cron_monthly.sh` — eles ativam o virtualenv, instalam dependências, baixam a planilha do Google Drive e constroem o comando automaticamente.
+
+#### Configuração do cron_daily.sh
 
 **1. Edite as variáveis no topo do wrapper:**
 
 ```bash
-# scripts/cron_daily.sh ou scripts/cron_monthly.sh
+# scripts/cron_daily.sh
 PROJECT_DIR="/caminho/para/relatorio_aws_finops_ai"
+AWS_REGION="sa-east-1"
 COST_EXPLORER_REGION="us-east-1"
 BEDROCK_REGION="us-east-1"
 BEDROCK_MODEL="us.anthropic.claude-sonnet-4-6"
 FINOPS_SNS_TOPIC_ARN="arn:aws:sns:us-east-1:123456789012:finops-relatorios"
 FINOPS_S3_BUCKET="meu-bucket-finops"
+GDRIVE_CREDENTIALS="$PROJECT_DIR/client_secret.json"
+GDRIVE_TOKEN="$PROJECT_DIR/token.json"
 ```
 
 **2. Adicione ao crontab (`crontab -e`):**
 
 ```cron
-# Relatório diário — todo dia às 08h
-0 8 * * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_daily.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_daily.log 2>&1
+# Relatório diário — todo dia às 08h horário de Brasília (11h UTC)
+0 11 * * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_daily.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_daily.log 2>&1
 
-# Relatório mensal — todo dia 5 do mês às 08h (gera o mês anterior automaticamente)
-0 8 5 * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_monthly.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_monthly.log 2>&1
+# Relatório mensal — todo dia 5 do mês às 08h horário de Brasília (11h UTC)
+0 11 5 * * /caminho/para/relatorio_aws_finops_ai/scripts/cron_monthly.sh >> /caminho/para/relatorio_aws_finops_ai/output/cron_monthly.log 2>&1
 ```
 
 **Uso manual do wrapper mensal com mês específico:**
@@ -670,10 +756,13 @@ bash scripts/cron_monthly.sh 2026-03
 
 Observações:
 
+- o `cron_daily.sh` baixa a planilha do Google Drive antes de cada execução e aborta se o download falhar
+- em caso de falha em qualquer etapa, um alerta é enviado automaticamente via SNS para o mesmo tópico do relatório
 - os wrappers calculam o mês anterior automaticamente quando não é passado argumento
 - sem `AWS_PROFILE` preenchido, boto3 usa a role IAM da EC2
 - `FINOPS_SNS_TOPIC_ARN` e `FINOPS_S3_BUCKET` vazios desabilitam o envio SNS
 - logs separados por tipo: `cron_daily.log` e `cron_monthly.log`
+- ajuste o timezone da EC2 se necessário: `sudo timedatectl set-timezone America/Sao_Paulo`
 
 ---
 
