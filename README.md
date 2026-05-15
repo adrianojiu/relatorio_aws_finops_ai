@@ -504,6 +504,64 @@ Observações:
 
 ---
 
+## 🧪 Testes Unitários
+
+O projeto possui testes unitários organizados em `tests/unit/`, cobrindo os principais módulos de análise e correlação.
+
+### Estrutura
+
+```
+tests/
+├── conftest.py                               # Fixtures compartilhadas (dataframes de exemplo, etc.)
+├── unit/
+│   ├── analyzers/
+│   │   ├── test_anomaly_detection.py          # 31 testes: timeseries, anomalias, filtros, enriquecimentos
+│   │   └── test_cost_analysis.py              # Testes de analise de custo consolidada
+│   ├── mappings/
+│   │   └── test_correlation_rules.py          # Testes de regras de correlacao
+│   └── test_config.py                        # Testes de validacao de configuracao
+└── integration/                               # Testes de integracao (futuro)
+```
+
+### Funcionalidades testadas
+
+`tests/unit/analyzers/test_anomaly_detection.py` cobre as 6 funcoes publicas de `src/analyzers/anomaly_detection.py`:
+
+| Classe de teste | O que testa |
+|---|---|
+| `TestBuildUsageTypeTimeseries` | Normalizacao e agrupamento de series temporais por Data/Servico/UsageType |
+| `TestCalculateAnomalies` | Calculo de cost_today, avg_7d, delta_usd, delta_pct |
+| `TestFilterRelevantAnomalies` | Filtragem por thresholds minimos (custo, variacao, top N) |
+| `TestEnrichComplementaryUsageTypes` | Enriquecimento com usage types complementares (S3, SMS) |
+| `TestEnrichApiOperations` | Enriquecimento com API operations do Cost Explorer |
+| `TestEnrichS3TierChangeAnalysis` | Analise de evidencia de mudanca de classe/tier S3 |
+
+### Como executar
+
+```bash
+# Instalar dependencias de desenvolvimento
+pip install pytest
+
+# Executar todos os testes unitarios
+pytest tests/unit/ -v
+
+# Executar apenas testes de anomaly_detection
+pytest tests/unit/analyzers/test_anomaly_detection.py -v
+
+# Executar com cobertura
+pytest tests/unit/ --cov=src/ --cov-report=term-missing
+```
+
+### Regras de manutencao
+
+- Toda funcao publica em `src/analyzers/anomaly_detection.py` deve ter testes correspondentes.
+- Testes usam `pytest` e fixtures do `conftest.py` para dados de exemplo.
+- Nao acoplar testes a chamadas reais de AWS; usar dataframes artificiais.
+- Ao adicionar novo enriquecimento ou funcao de analise, criar classe de teste equivalente.
+- Antes de finalizar qualquer mudanca nos analisadores, executar `pytest tests/unit/ -v` para garantir que nada quebrou.
+
+---
+
 ## Export mensal com todos os serviços e somente PDP
 
 Para gerar os dois CSVs mensais e já acionar a análise mensal automaticamente:

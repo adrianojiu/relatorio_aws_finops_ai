@@ -40,10 +40,12 @@ Use `PROJECT_CONTEXT.md` como fonte principal de contexto de negócio, operaçã
 
 ## Ao fazer mudanças
 
-- Atualize o `README.md` se mudar comando, artefato gerado ou fluxo operacional.
+- Atualize o `README.md` se mudar comando, artefato gerado, fluxo operacional ou estrutura de testes.
 - Atualize o `PROJECT_CONTEXT.md` se mudar regra de negócio, observabilidade ou interpretação operacional.
 - Mantenha o `config.py` objetivo; se o texto parecer explicação longa para humanos, provavelmente ele pertence ao `PROJECT_CONTEXT.md`.
 - Sempre adicione comentarios no codigo para entendimento dos trechos.
+- Ao alterar funcoes publicas do modulo `src/analyzers/anomaly_detection.py`, atualize tambem os testes correspondentes em `tests/unit/analyzers/test_anomaly_detection.py`.
+- Testes unitarios estao em `tests/unit/` e devem ser executados com `pytest` antes de finalizar qualquer mudanca.
 
 ---
 

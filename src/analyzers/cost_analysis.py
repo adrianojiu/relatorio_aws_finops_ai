@@ -73,6 +73,8 @@ def build_sms_last_7_days(df, ultimo_dia):
     )
 
     total_sms_7d = sms_por_dia["Custo($)"].sum()
-    media_sms_7d = sms_por_dia["Custo($)"].mean()
+    # Quando nao houver linhas de SMS no periodo, a media deve voltar como zero
+    # para evitar propagar NaN para o renderer e para os testes.
+    media_sms_7d = 0.0 if sms_por_dia.empty else sms_por_dia["Custo($)"].mean()
 
     return sms_por_dia, total_sms_7d, media_sms_7d
