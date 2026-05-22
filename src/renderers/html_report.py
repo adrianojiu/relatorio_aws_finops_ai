@@ -97,13 +97,20 @@ def _parse_ai_analysis(ai_text):
 
     # Driver sections
     driver_blocks = re.split(r"\n---\n", text)
-    driver_re = re.compile(
+    # Suporta dois formatos de classificação:
+    # 1. "### N. Título | `classificação`" (inline — formato atual do modelo)
+    # 2. "### N. Título\n**Classificação:** `valor`" (linha separada — formato legado)
+    driver_re_inline = re.compile(
+        r"###\s+\d+\.\s+(.*?)\|\s*`([^`]+)`",
+        re.IGNORECASE,
+    )
+    driver_re_block = re.compile(
         r"###\s+\d+\.\s+(.*?)[\n]"
         r"\*\*Classifica[çc][aã]o:\*\*\s*`([^`]+)`",
         re.IGNORECASE,
     )
     for block in driver_blocks:
-        m = driver_re.search(block)
+        m = driver_re_inline.search(block) or driver_re_block.search(block)
         if not m:
             continue
         title = m.group(1).strip()

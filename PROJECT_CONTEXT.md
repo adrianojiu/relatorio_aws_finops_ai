@@ -500,6 +500,7 @@ Importante:
 - Eventos no Brasil como Black Friday, Dia das Maes, Natal, Copa do Mundo e Jogos Olimpicos tendem a aumentar a demanda e, consequentemente, a utilizacao dos recursos da plataforma.
 - Consultar usagetype e API operation do cost explorer para se aproximar da causa e dar uma resposta mais precisa sobre as anomalias, ou listar custo fora da curva.
 - Em caso de mudança de tier do S3 verificar sobre a mudança no CloudTrail para identificar informação de quem executou e outras pertinentes.
+- Houve stress test em `2026-05-20`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 
 ## Como evoluir o projeto sem perder coerencia
 
