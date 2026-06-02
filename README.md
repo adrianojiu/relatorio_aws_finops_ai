@@ -221,7 +221,7 @@ Para a execução completa via AWS API, o profile normalmente precisa de permiss
   - `states:ListStateMachines`
   - `dynamodb:ListTables`
   - `firehose:ListDeliveryStreams`
-  - `glue:GetJobs`
+  - `glue:GetJobs`, `glue:GetJobRuns`
   - `ecr:DescribeRepositories`
   - `backup:ListBackupVaults`
 - Bedrock, quando `--enable-bedrock` estiver ativo: `bedrock:InvokeModel`
@@ -411,6 +411,7 @@ Observações:
    - Hoje ha heuristicas para Ping Directory com `Name` contendo `PD-`, nodegroups `ping-access-app`, `ping-pdp-app`, `ping-federate-app`, cluster `prd-sso-fachada`, buckets S3 conhecidos e streams Firehose conhecidos parametrizados no `src/config.py`
    - A correlacao de Firehose usa metricas como `IncomingRecords`, `IncomingBytes`, `DeliveryToS3.Bytes`, `DeliveryToS3.Records`, `DeliveryToS3.Success` e `DeliveryToS3.DataFreshness`, configuradas no `src/config.py`
    - A correlacao de Glue usa metricas como `glue.driver.aggregate.bytesRead`, `bytesWritten`, `elapsedTime`, `numCompletedStages`, `recordsRead` e `recordsWritten`, configuradas no `src/config.py`
+   - Alem das metricas CloudWatch, o projeto coleta historico de execucoes via `glue:GetJobRuns` (API gratuita) para cada job candidato, retornando DPUs alocadas, duracao media, status e contagem de execucoes na janela de analise; isso permite distinguir reprocessamento de execucoes longas como causa da variabilidade de custo
    - Para S3, se um bucket nao tiver exatamente o filtro `all-objects`, o projeto tenta usar outro `MetricsConfiguration Id` disponivel antes de concluir que nao ha request metrics utilizaveis
    - A correlacao de ECR usa `RepositoryPullCount` para repositorios conhecidos do ambiente apenas como evidencia complementar de rollout, restart ou scale-out no EKS
    - A correlacao de AWS Backup usa `NumberOfBackupJobsCompleted`, `NumberOfRecoveryPointsCreated`, `BackupVaultBytes` e `NumberOfCopyJobsCompleted` como evidencia complementar para `EC2-Other`, snapshots e backup de S3

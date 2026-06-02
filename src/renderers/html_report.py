@@ -100,12 +100,14 @@ def _parse_ai_analysis(ai_text):
     # Suporta dois formatos de classificação:
     # 1. "### N. Título | `classificação`" (inline — formato atual do modelo)
     # 2. "### N. Título\n**Classificação:** `valor`" (linha separada — formato legado)
+    # Suporta separadores numéricos: "1." (ponto) e "1 —" / "1 -" (travessão)
+    _num_sep = r"\d+(?:\.\s*|[\s—–-]+)"
     driver_re_inline = re.compile(
-        r"###\s+\d+\.\s+(.*?)\|\s*`([^`]+)`",
+        r"###\s+" + _num_sep + r"(.*?)\|\s*`([^`]+)`",
         re.IGNORECASE,
     )
     driver_re_block = re.compile(
-        r"###\s+\d+\.\s+(.*?)[\n]"
+        r"###\s+" + _num_sep + r"(.*?)[\n]"
         r"\*\*Classifica[çc][aã]o:\*\*\s*`([^`]+)`",
         re.IGNORECASE,
     )
@@ -199,7 +201,7 @@ def _build_daily_chart_section(daily_labels, daily_values):
         backgroundColor: 'rgba(192,29,38,0.75)',
         borderColor: 'rgba(192,29,38,1)',
         borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 0,
       }}]
     }},
     options: {{
@@ -299,7 +301,7 @@ def _build_top_services_section(top_costs, ultimo_dia):
           'rgba(200,170,220,0.60)','rgba(140,180,230,0.65)','rgba(100,160,210,0.70)',
           'rgba(80,140,200,0.75)'
         ],
-        borderRadius: 4,
+        borderRadius: 0,
       }}]
     }},
     options: {{
@@ -544,7 +546,7 @@ a { color: #c01d26; }
 .tab-pane.active { display: block; }
 
 /* Cards */
-.card { background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 20px;
+.card { background: #fff; padding: 20px 24px; margin-bottom: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,.07); }
 .card h2 { font-size: 15px; font-weight: 700; color: #c01d26; margin-bottom: 14px;
   padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
@@ -553,7 +555,7 @@ a { color: #c01d26; }
 /* KPI grid */
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .kpi-grid.kpi-small { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
-.kpi-card { background: #fff; border-radius: 8px; padding: 16px 20px;
+.kpi-card { background: #fff; padding: 16px 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,.07); border-left: 4px solid #c01d26; }
 .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #718096; margin-bottom: 6px; }
 .kpi-value { font-size: 22px; font-weight: 700; color: #2d3748; }
@@ -589,14 +591,14 @@ a { color: #c01d26; }
 /* Day tabs */
 .day-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
 .day-tab { padding: 5px 12px; background: #f4f6f8; border: 1px solid #e2e8f0;
-  border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; color: #718096; }
+  cursor: pointer; font-size: 12px; font-weight: 500; color: #718096; }
 .day-tab.active { background: #c01d26; color: #fff; border-color: #c01d26; }
 .day-panel { display: none; }
 .day-panel.active { display: block; }
 
 /* Classification summary */
 .classification-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
-.cls-card { border-radius: 8px; padding: 16px 20px; text-align: center; }
+.cls-card { padding: 16px 20px; text-align: center; }
 .cls-card.cls-anomalia { background: #fff5f5; border: 1px solid #fed7d7; }
 .cls-card.cls-esperado  { background: #f0fff4; border: 1px solid #c6f6d5; }
 .cls-card.cls-cascata   { background: #ebf8ff; border: 1px solid #bee3f8; }
@@ -610,7 +612,7 @@ a { color: #c01d26; }
 .cls-card.cls-cascata   .cls-count { color: #2b6cb0; }
 
 /* Badges */
-.badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+.badge { display: inline-block; padding: 3px 10px;
   font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
 .badge-anomalia { background: #fff5f5; color: #c53030; border: 1px solid #fed7d7; }
 .badge-esperado  { background: #f0fff4; color: #276749; border: 1px solid #c6f6d5; }
@@ -618,7 +620,7 @@ a { color: #c01d26; }
 
 /* Driver cards */
 .drivers-grid { display: grid; gap: 14px; }
-.driver-card { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.driver-card { border: 1px solid #e2e8f0; overflow: hidden; }
 .driver-header { padding: 12px 16px; background: #fafbfc; border-bottom: 1px solid #e2e8f0;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .driver-title { font-size: 14px; font-weight: 600; color: #2d3748; flex: 1; min-width: 200px; }
@@ -629,7 +631,7 @@ a { color: #c01d26; }
 .driver-section p { font-size: 13px; color: #4a5568; }
 .confianca { font-size: 12px; color: #718096; padding-top: 8px;
   border-top: 1px dashed #e2e8f0; margin-top: 8px; }
-.confianca code { background: #f4f6f8; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+.confianca code { background: #f4f6f8; padding: 1px 5px; font-size: 11px; }
 
 /* Executive list */
 .exec-list { padding-left: 0; list-style: none; }
@@ -644,7 +646,7 @@ a { color: #c01d26; }
   position: relative; font-size: 13px; counter-increment: rec-counter; }
 .rec-list li:last-child { border-bottom: none; }
 .rec-list li::before { content: counter(rec-counter); background: #c01d26; color: #fff;
-  width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center;
+  width: 20px; height: 20px; display: flex; align-items: center;
   justify-content: center; font-size: 11px; font-weight: 700; position: absolute; left: 0; top: 10px; }
 
 /* Empty state */
@@ -652,7 +654,7 @@ a { color: #c01d26; }
 .empty-state p { margin: 12px 0 0; font-size: 15px; }
 .empty-state .hint { font-size: 13px; color: #cbd5e0; margin-top: 8px; }
 .empty-state svg { margin: 0 auto; }
-code { background: #f4f6f8; padding: 2px 6px; border-radius: 4px;
+code { background: #f4f6f8; padding: 2px 6px;
   font-family: 'Courier New', monospace; font-size: 12px; }
 """
 
@@ -702,8 +704,8 @@ def _build_html(
 </header>
 
 <nav class="tab-nav">
-  <button class="tab-btn active" data-tab="overview">&#128200; Visão Geral</button>
-  <button class="tab-btn" data-tab="ai">&#129302; Análise de Anomalias</button>
+  <button class="tab-btn active" data-tab="overview">Visão Geral</button>
+  <button class="tab-btn" data-tab="ai">Análise de Anomalias</button>
 </nav>
 
 <div id="tab-overview" class="tab-pane active">{tab1}</div>

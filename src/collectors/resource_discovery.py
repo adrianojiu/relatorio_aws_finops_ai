@@ -343,13 +343,98 @@ def _list_firehose_streams(session):
 
 
 def _list_glue_jobs(session):
+    """Lista jobs Glue existentes e inclui configuracao de capacidade no derived_context."""
     client = session.client("glue")
     paginator = client.get_paginator("get_jobs")
     resources = []
     for page in paginator.paginate():
         for job in page.get("Jobs", []):
-            resources.append({"resource_id": job["Name"]})
+            derived_context = {}
+            # MaxCapacity (float) representa DPUs para o tipo Standard/Python Shell;
+            # NumberOfWorkers e WorkerType sao usados nos modos G.1X, G.2X e Z.2X.
+            if "MaxCapacity" in job:
+                derived_context["max_capacity_dpu"] = job["MaxCapacity"]
+            if "WorkerType" in job:
+                derived_context["worker_type"] = job["WorkerType"]
+            if "NumberOfWorkers" in job:
+                derived_context["number_of_workers"] = job["NumberOfWorkers"]
+            resources.append({
+                "resource_id": job["Name"],
+                "derived_context": derived_context,
+            })
     return resources
+
+
+def _collect_glue_job_runs(session, job_name, start_date, end_date):
+    """
+    Coleta execucoes recentes de um job Glue via GetJobRuns (API gratuita).
+
+    Retorna um resumo agregado com contagem por status, duracao media e DPU maxima,
+    alem dos detalhes individuais de cada execucao na janela de analise.
+    Execucoes fora da janela [start_date, end_date] sao ignoradas.
+    """
+    client = session.client("glue")
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    # Inclui o dia final completo
+    end_dt = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).replace(tzinfo=timezone.utc)
+
+    runs_in_window = []
+    next_token = None
+    fetched = 0
+
+    # Pagina ate atingir o teto de execucoes configurado
+    while fetched < config.GLUE_JOB_RUNS_MAX_PER_JOB:
+        kwargs = {"JobName": job_name, "MaxResults": min(200, config.GLUE_JOB_RUNS_MAX_PER_JOB - fetched)}
+        if next_token:
+            kwargs["NextToken"] = next_token
+        response = client.get_job_runs(**kwargs)
+        job_runs = response.get("JobRuns", [])
+
+        for run in job_runs:
+            started_on = run.get("StartedOn")
+            if started_on and start_dt <= started_on <= end_dt:
+                completed_on = run.get("CompletedOn")
+                execution_time_sec = run.get("ExecutionTime", 0)
+                # DPU: MaxCapacity para tipos Standard/Python Shell; NumberOfWorkers * fator para G.x
+                dpu = run.get("MaxCapacity") or run.get("AllocatedCapacity", 0)
+                run_detail = {
+                    "run_id": run.get("Id"),
+                    "state": run.get("JobRunState"),
+                    "started_on": started_on.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "completed_on": completed_on.strftime("%Y-%m-%dT%H:%M:%SZ") if completed_on else None,
+                    "execution_time_min": round(execution_time_sec / 60, 1) if execution_time_sec else None,
+                    "dpu": dpu,
+                    "worker_type": run.get("WorkerType"),
+                    "number_of_workers": run.get("NumberOfWorkers"),
+                    "error_message": run.get("ErrorMessage"),
+                }
+                runs_in_window.append(run_detail)
+
+        fetched += len(job_runs)
+        next_token = response.get("NextToken")
+        if not next_token:
+            break
+
+    if not runs_in_window:
+        return {"total_runs": 0, "runs": []}
+
+    # Agrega por status
+    status_counts = {}
+    for r in runs_in_window:
+        state = r["state"] or "UNKNOWN"
+        status_counts[state] = status_counts.get(state, 0) + 1
+
+    durations = [r["execution_time_min"] for r in runs_in_window if r["execution_time_min"] is not None]
+    dpus = [r["dpu"] for r in runs_in_window if r["dpu"]]
+
+    return {
+        "total_runs": len(runs_in_window),
+        "status_counts": status_counts,
+        "avg_duration_min": round(sum(durations) / len(durations), 1) if durations else None,
+        "max_duration_min": max(durations) if durations else None,
+        "max_dpu": max(dpus) if dpus else None,
+        "runs": runs_in_window,
+    }
 
 
 def _list_relevant_ecr_repositories(session):
@@ -1552,6 +1637,23 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
             except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
                 athena_query_activity = []
 
+        # Para jobs Glue, coleta historico de execucoes (DPU, duracao, status) via GetJobRuns.
+        # Essa API nao tem custo e permite identificar reprocessamento ou execucoes longas
+        # como causa da variabilidade de custo observada.
+        job_runs_summary = None
+        if resource_type == "glue_job" and candidate.get("resource_id"):
+            try:
+                print(f"  [enrich]   -> Glue job runs (GetJobRuns)...")
+                job_runs_summary = _collect_glue_job_runs(
+                    session=session,
+                    job_name=candidate["resource_id"],
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError):
+                job_runs_summary = None
+
+        has_enrichment = bool(metrics_summary or query_activity or athena_query_activity or job_runs_summary)
         candidate_payload = {
             "resource_type": resource_type,
             "resource_id": candidate.get("resource_id"),
@@ -1564,10 +1666,11 @@ def discover_and_enrich_resources(anomaly, rule, start_date, end_date, enable_aw
                 "anchor_day": anomaly.get("anchor_day"),
             },
             "anomaly_anchor_day": anomaly.get("anchor_day"),
-            "confidence": "medium" if metrics_summary or query_activity or athena_query_activity else "low",
+            "confidence": "medium" if has_enrichment else "low",
             "metrics": metrics_summary,
             "query_activity": query_activity,
             "athena_query_activity": athena_query_activity,
+            "job_runs_summary": job_runs_summary,
             "cloudtrail_s3_activity": None,
             "possible_impacted_services": rule.get("possible_impacted_services", []),
             "hypothesis": rule.get("hypothesis"),

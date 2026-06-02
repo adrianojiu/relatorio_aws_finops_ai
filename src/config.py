@@ -203,6 +203,11 @@ GLUE_METRICS = [
     {"name": "glue.driver.aggregate.recordsWritten", "stat": "Sum"},
 ]
 
+# Janela de lookback para coleta de execucoes de jobs Glue (GetJobRuns)
+GLUE_JOB_RUNS_LOOKBACK_DAYS = 7
+# Maximo de execucoes retornadas por job (GetJobRuns e paginado; este e o teto por job)
+GLUE_JOB_RUNS_MAX_PER_JOB = 30
+
 # ECR correlation metrics
 ECR_METRICS = [
     {"name": "RepositoryPullCount", "stat": "Sum"},
