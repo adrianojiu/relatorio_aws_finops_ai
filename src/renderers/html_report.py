@@ -97,32 +97,61 @@ def _parse_ai_analysis(ai_text):
 
     # Driver sections
     driver_blocks = re.split(r"\n---\n", text)
-    # Suporta dois formatos de classificação:
-    # 1. "### N. Título | `classificação`" (inline — formato atual do modelo)
-    # 2. "### N. Título\n**Classificação:** `valor`" (linha separada — formato legado)
-    # Suporta separadores numéricos: "1." (ponto) e "1 —" / "1 -" (travessão)
+    # Marcador de início do título: aceita heading markdown "### N." e negrito "**N. ...**".
+    # O modelo varia entre as duas formas; ambas precisam ser parseadas para não perder cards.
+    _marker = r"(?:###\s+|\*\*)"
+    # Separadores numéricos suportados: "1." (ponto) e "1 —" / "1 -" (travessão)
     _num_sep = r"\d+(?:\.\s*|[\s—–-]+)"
+    # Suporta dois formatos de classificação:
+    # 1. "### N. Título | `classificação`" (inline)
+    # 2. "### N. Título" ou "**N. Título**" seguido de "**Classificação:** `valor`" (linha separada)
     driver_re_inline = re.compile(
-        r"###\s+" + _num_sep + r"(.*?)\|\s*`([^`]+)`",
+        _marker + _num_sep + r"(.*?)\*{0,2}\s*\|\s*`([^`]+)`",
         re.IGNORECASE,
     )
     driver_re_block = re.compile(
-        r"###\s+" + _num_sep + r"(.*?)[\n]"
+        _marker + _num_sep + r"(.*?)\*{0,2}\s*\n+"
         r"\*\*Classifica[çc][aã]o:\*\*\s*`([^`]+)`",
         re.IGNORECASE,
     )
+    # Linha de título a remover do corpo livre (heading ou negrito iniciando por número)
+    title_line_re = re.compile(r"^" + _marker + _num_sep, re.IGNORECASE)
     for block in driver_blocks:
         m = driver_re_inline.search(block) or driver_re_block.search(block)
         if not m:
             continue
-        title = m.group(1).strip()
+        # Remove ** residual do título capturado (forma negrito "**N. Título**")
+        title = m.group(1).strip().strip("*").strip()
         classification = m.group(2).strip()
 
         def _extract(label, src):
+            # Captura ate o proximo rotulo em negrito, cabecalho markdown, separador ou fim.
+            # Evita que o ultimo campo (ex: Confianca) absorva a secao seguinte.
             pat = re.search(
-                rf"\*\*{label}[:\s]*\*\*\s*(.*?)(?=\n\*\*|\Z)", src, re.DOTALL | re.IGNORECASE
+                rf"\*\*{label}[:\s]*\*\*\s*(.*?)(?=\n\*\*|\n##|\n---|\Z)",
+                src, re.DOTALL | re.IGNORECASE,
             )
             return pat.group(1).strip() if pat else ""
+
+        # Corpo livre: fallback para quando o modelo escreve em prosa, sem os rótulos
+        # **Causa provável:** / **Evidências:**. Descarta linhas já estruturadas
+        # (título, classificação e confiança) e mantém o restante como texto da análise.
+        body_lines = []
+        for ln in block.splitlines():
+            s = ln.strip()
+            if not s or s == "---":
+                continue
+            # Pula cabecalhos de secao markdown (ex: "## Principais drivers")
+            if s.startswith("#"):
+                continue
+            if title_line_re.match(s):
+                continue
+            if re.match(r"\*\*Classifica[çc][aã]o", s, re.IGNORECASE):
+                continue
+            if re.match(r"\*\*Confian[çc]a", s, re.IGNORECASE):
+                continue
+            body_lines.append(s)
+        body = " ".join(body_lines).strip()
 
         result["drivers"].append({
             "title": title,
@@ -130,6 +159,7 @@ def _parse_ai_analysis(ai_text):
             "causa": _extract("Causa prov[aá]vel", block),
             "evidencias": _extract("Evid[eê]ncias", block),
             "confianca": _extract("Confian[çc]a", block),
+            "body": body,
         })
 
     # Recommendations
@@ -475,6 +505,14 @@ def _build_ai_tab(ai_data):
         causa_block = f'<div class="driver-section"><strong>Causa provável</strong><p>{causa_html}</p></div>' if causa_html else ""
         ev_block = f'<div class="driver-section"><strong>Evidências</strong><p>{ev_html}</p></div>' if ev_html else ""
 
+        # Fallback: quando o modelo escreve em prosa (sem rótulos causa/evidências),
+        # renderiza o corpo livre como uma única seção "Análise" para não perder conteúdo.
+        analise_block = ""
+        if not causa_block and not ev_block:
+            body_html = _inline_md(driver.get("body", ""))
+            if body_html:
+                analise_block = f'<div class="driver-section"><strong>Análise</strong><p>{body_html}</p></div>'
+
         drivers_html += f"""
 <div class="driver-card">
   <div class="driver-header">
@@ -484,6 +522,7 @@ def _build_ai_tab(ai_data):
   <div class="driver-body">
     {causa_block}
     {ev_block}
+    {analise_block}
     {conf_block}
   </div>
 </div>

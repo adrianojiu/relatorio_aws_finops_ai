@@ -282,6 +282,267 @@ class TestCalculateServiceVariations:
         assert len(top_costs) == 0
 
 
+class TestBuildUsageTypeVariationReport:
+    """Testes para o relatório de variação por UsageType."""
+
+    def test_builds_usage_type_report(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-05-01", "2026-05-02", "2026-05-03"],
+            "Serviço": ["Amazon S3", "Amazon S3", "Amazon S3"],
+            "UsageType": ["Storage", "Storage", "Storage"],
+            "Custo($)": [10.0, 0.0, 15.0],
+        })
+
+        result = cost_analysis.build_usage_type_variation_report(
+            df, "2026-05-01", "2026-05-03", min_total_usd=5.0
+        )
+
+        assert len(result) == 1
+        row = result.iloc[0]
+        assert row["Serviço"] == "Amazon S3"
+        assert row["UsageType"] == "Storage"
+        assert round(row["Total 30d"], 2) == 25.0
+        assert round(row["Participação %"], 1) == 100.0
+        assert round(row["Média diária"], 2) == 8.33
+        assert round(row["Último dia"], 2) == 15.0
+        assert round(row["Máximo 30d"], 2) == 15.0
+        assert round(row["Mínimo 30d"], 2) == 0.0
+        assert round(row["∆7d vs prev"], 2) == 8.33
+        assert round(row["Variação US$"], 2) == 6.67
+        assert round(row["Variação %"], 1) == 80.0
+        # Regressão linear: x=[0,1,2], y=[10,0,15] → slope = 2.5 US$/dia
+        assert "Impacto US$/dia" in result.columns
+        assert round(row["Impacto US$/dia"], 2) == 2.5
+
+        # Novas colunas de comportamento
+        assert "Desvio diário" in result.columns
+        assert "CV" in result.columns
+        assert "Comportamento" in result.columns
+        # slope_ratio = 2.5 / 8.33 ≈ 0.30 > 0.01 → Crescendo (CV não é volátil pois std/avg < 0.5 aqui)
+        assert row["Comportamento"] in ("Crescendo", "Volátil", "Estável", "Caindo")
+
+    def test_build_usage_type_variation_chart_data_prioritizes_top_positive_variations(self):
+        from analyzers import cost_analysis
+        from src import config
+
+        df_report = pd.DataFrame({
+            "UsageType": ["A", "B", "C", "D", "E"],
+            "Serviço": ["S1", "S1", "S2", "S2", "S3"],
+            "Variação %": [25.0, -95.0, 60.0, -20.0, 10.0],
+        })
+
+        result = cost_analysis.build_usage_type_variation_percent_chart_data(df_report)
+
+        assert len(result) <= config.USAGE_TYPE_CHART_MAX_USAGE_TYPES
+        assert result[0]["UsageType"] == "C (S2)"
+        assert result[1]["UsageType"] == "A (S1)"
+        assert result[2]["UsageType"] == "E (S3)"
+        assert result[0]["variation_pct"] == 60.0
+        assert result[1]["variation_pct"] == 25.0
+        assert result[2]["variation_pct"] == 10.0
+
+    def test_builds_usage_type_daily_trend_by_usage_type(self):
+        from analyzers import cost_analysis
+        import config as cfg
+
+        df = pd.DataFrame({
+            "Data": [
+                "2026-05-01", "2026-05-01", "2026-05-02", "2026-05-02",
+                "2026-05-03", "2026-05-03", "2026-05-04", "2026-05-04",
+            ],
+            "Serviço": [
+                "Amazon S3", "AmazonCloudWatch", "Amazon S3", "AmazonCloudWatch",
+                "Amazon S3", "AmazonCloudWatch", "Amazon S3", "AmazonCloudWatch",
+            ],
+            "UsageType": [
+                "Storage", "Metrics", "Storage", "Metrics",
+                "Storage", "Metrics", "Storage", "Metrics",
+            ],
+            "Custo($)": [10.0, 5.0, 0.0, 4.0, 15.0, 0.5, 0.0, 6.0],
+        })
+
+        all_dates, forecast_dates, chart_data, total_daily_values = (
+            cost_analysis.build_usage_type_daily_trend(df, "2026-05-01", "2026-05-04")
+        )
+
+        # Datas do período do relatório (sem forecast).
+        assert all_dates == ["2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04"]
+
+        # Datas de projeção começam no dia seguinte ao fim do relatório.
+        assert len(forecast_dates) == cfg.USAGE_TYPE_REPORT_FORECAST_DAYS
+        assert forecast_dates[0] == "2026-05-05"
+
+        # Dois UsageTypes com custo acima de zero (labels incluem o serviço).
+        assert len(chart_data) == 2
+        storage = chart_data[0]  # maior custo total: 10+15=25
+        metrics = chart_data[1]  # custo total: 5+4+0.5+6=15.5
+
+        assert storage["UsageType"] == "Storage (Amazon S3)"
+        assert storage["daily_values"] == [10.0, 0.0, 15.0, 0.0]
+        # Último valor é 0 e slope negativo → todos os forecast são 0.
+        assert len(storage["forecast_values"]) == cfg.USAGE_TYPE_REPORT_FORECAST_DAYS
+        assert all(v == 0.0 for v in storage["forecast_values"])
+        assert "trend_values" not in storage
+
+        assert metrics["UsageType"] == "Metrics (AmazonCloudWatch)"
+        assert metrics["daily_values"] == [5.0, 4.0, 0.5, 6.0]
+        assert len(metrics["forecast_values"]) == cfg.USAGE_TYPE_REPORT_FORECAST_DAYS
+        # slope = (6.0 - 5.0) / (4-1) = 0.3333; step 1 = round(6.0 + 0.3333, 4) = 6.3333
+        assert metrics["forecast_values"][0] == round(6.0 + (6.0 - 5.0) / 3, 4)
+
+        # Total diário = soma de todos os UsageTypes por data.
+        assert total_daily_values == [15.0, 4.0, 15.5, 6.0]
+
+    def test_builds_usage_type_daily_variation_pct_trend(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04"],
+            "Serviço": ["Amazon S3", "Amazon S3", "Amazon S3", "Amazon S3"],
+            "UsageType": ["Storage", "Storage", "Storage", "Storage"],
+            "Custo($)": [10.0, 15.0, 12.0, 18.0],
+        })
+
+        labels, chart_data = cost_analysis.build_usage_type_daily_variation_pct_trend(
+            df, "2026-05-01", "2026-05-04"
+        )
+
+        assert labels == ["2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04"]
+        assert len(chart_data) == 1
+        assert chart_data[0]["UsageType"] == "Storage (Amazon S3)"
+        assert chart_data[0]["variation_pct_values"] == [None, 50.0, -20.0, 50.0]
+
+    def test_variation_pct_trend_ranks_by_df_report_variation(self):
+        # Quando df_report é fornecido, o ranking deve usar |Variação %| e não custo total.
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": [
+                "2026-05-01", "2026-05-01",
+                "2026-05-02", "2026-05-02",
+            ],
+            "Serviço": ["S3", "EC2", "S3", "EC2"],
+            "UsageType": ["Storage", "BoxUsage", "Storage", "BoxUsage"],
+            "Custo($)": [100.0, 5.0, 200.0, 50.0],  # S3 tem custo maior
+        })
+        # df_report com Variação % maior para EC2 (apesar do custo menor)
+        # EC2 tem maior Impacto US$/dia positivo → deve aparecer primeiro no gráfico.
+        df_report = pd.DataFrame({
+            "UsageType": ["Storage", "BoxUsage"],
+            "Serviço": ["S3", "EC2"],
+            "Variação %": [10.0, 900.0],
+            "Impacto US$/dia": [0.5, 45.0],  # EC2 tem maior slope positivo
+        })
+
+        _, chart_data = cost_analysis.build_usage_type_daily_variation_pct_trend(
+            df, "2026-05-01", "2026-05-02", df_report=df_report
+        )
+
+        # EC2/BoxUsage deve aparecer primeiro por ter maior |Impacto US$/dia|.
+        assert len(chart_data) >= 2
+        assert chart_data[0]["UsageType"] == "BoxUsage (EC2)"
+
+    def test_filters_usage_types_below_minimum_total(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-05-01", "2026-05-02"],
+            "Serviço": ["AmazonCloudWatch", "AmazonCloudWatch"],
+            "UsageType": ["Metrics", "Metrics"],
+            "Custo($)": [2.0, 1.0],
+        })
+
+        result = cost_analysis.build_usage_type_variation_report(
+            df, "2026-05-01", "2026-05-02", min_total_usd=5.0
+        )
+
+        assert result.empty
+
+    def test_raises_for_invalid_range(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-05-01"],
+            "Serviço": ["Amazon S3"],
+            "UsageType": ["Storage"],
+            "Custo($)": [10.0],
+        })
+
+        with pytest.raises(ValueError):
+            cost_analysis.build_usage_type_variation_report(
+                df, "2026-05-05", "2026-05-01", min_total_usd=5.0
+            )
+
+
+# ---------------------------------------------------------------------------
+# build_anomaly_data e build_weekly_pattern
+# ---------------------------------------------------------------------------
+
+class TestBuildAnomalyData:
+    def test_detects_spike_as_anomaly(self):
+        from analyzers import cost_analysis
+
+        # 9 dias estáveis + 1 spike no dia 10 → z ≈ 2.85, acima do threshold de 2.0.
+        # Com poucos pontos estáveis o outlier puxa a média e reduz o z-score;
+        # com 9 pontos de baseline o z ultrapassa 2.0 de forma confiável.
+        dates = [f"2026-05-{i+1:02d}" for i in range(10)]
+        df = pd.DataFrame({
+            "Data": dates,
+            "Serviço": ["S3"] * 10,
+            "UsageType": ["Storage"] * 10,
+            "Custo($)": [10.0] * 9 + [100.0],
+        })
+        result = cost_analysis.build_anomaly_data(df, "2026-05-01", "2026-05-10")
+
+        assert len(result["top_anomalies"]) == 1
+        anom = result["top_anomalies"][0]
+        assert anom["date"] == "2026-05-10"
+        assert anom["direction"] == "Alta"
+        assert anom["z_score"] > 2.0
+        assert "Storage (S3)" in result["by_label"]
+        assert 9 in result["by_label"]["Storage (S3)"]  # índice 9 (0-based)
+
+    def test_returns_empty_for_stable_series(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-05-01","2026-05-02","2026-05-03"],
+            "Serviço": ["S3"] * 3,
+            "UsageType": ["Storage"] * 3,
+            "Custo($)": [10.0, 10.5, 10.2],  # variação mínima, z < 2
+        })
+        result = cost_analysis.build_anomaly_data(df, "2026-05-01", "2026-05-03")
+        assert result["top_anomalies"] == []
+        assert result["by_label"] == {}
+
+
+class TestBuildWeeklyPattern:
+    def test_computes_weekly_average(self):
+        from analyzers import cost_analysis
+
+        # Segunda (0) e terça (1) em duas semanas
+        df = pd.DataFrame({
+            "Data": ["2026-05-04","2026-05-05","2026-05-11","2026-05-12"],  # seg,ter,seg,ter
+            "Serviço": ["S3","S3","S3","S3"],
+            "UsageType": ["Storage","Storage","Storage","Storage"],
+            "Custo($)": [10.0, 20.0, 30.0, 40.0],
+        })
+        labels, chart_data = cost_analysis.build_weekly_pattern(df, "2026-05-04", "2026-05-12")
+
+        assert labels == ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+        assert len(chart_data) == 1
+        item = chart_data[0]
+        assert item["UsageType"] == "Storage (S3)"
+        # Seg: média de 10 e 30 = 20
+        assert item["values"][0] == 20.0
+        # Ter: média de 20 e 40 = 30
+        assert item["values"][1] == 30.0
+        # Outros dias: 0 (sem dados)
+        assert item["values"][2] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # build_sms_trend (baseline 30 dias)
 # ---------------------------------------------------------------------------

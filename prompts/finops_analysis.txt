@@ -185,6 +185,18 @@ Nao force todos os itens a serem anomalias.
 - Depois apresente somente os itens mais importantes enviados no payload, priorizando no maximo 4 itens.
 - Em `Resumo executivo`, entregue bullets curtos, orientados a decisao, sem repetir detalhes tecnicos.
 - Em `Principais drivers`, limite cada item a 4 linhas curtas: classificacao, causa provavel, evidencias principais e confianca.
+- Para cada item em `Principais drivers`, use EXATAMENTE este formato (o relatorio HTML depende dele para montar os cards):
+
+  ### N. <servico> — <usage_type> | `classificacao`
+  **Causa provavel:** <texto curto>
+  **Evidencias:** <texto curto>
+  **Confianca:** <alta | media | baixa>
+
+  Onde:
+  - o titulo comeca com `###` e o numero do item (ex: `### 1.`)
+  - `classificacao` fica entre crases logo apos `|` e deve ser uma de: `anomalia real`, `desvio esperado`, `efeito em cascata`
+  - os rotulos `**Causa provavel:**`, `**Evidencias:**` e `**Confianca:**` sao obrigatorios e em negrito
+  - separe um driver do proximo com uma linha contendo apenas `---`
 - Em `Recomendacoes`, entregue no maximo 3 acoes praticas e objetivas.
 - Finalize com uma marca clara de fim de resposta.
 

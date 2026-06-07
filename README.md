@@ -96,7 +96,18 @@ Para quem quer bater o olho e já executar sem ler tudo:
    python3 run.py --aws-profile prd-ciam --aws-region sa-east-1 --cost-explorer-region us-east-1 --bedrock-region us-east-1 --enable-bedrock --bedrock-model us.anthropic.claude-sonnet-4-6
    ```
 
-4. **Gerar o relatório mensal com todos os serviços e somente PDP**
+4. **Gerar o relatório de UsageType em janela customizada**
+   ```bash
+   python3 scripts/generate_usage_type_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --start-date 2026-05-03 \
+     --end-date 2026-06-21
+   ```
+
+   O relatório será salvo em `output/usage_type_30d/2026-05-03_to_2026-06-21/` como TXT e HTML.
+
+5. **Gerar o relatório mensal com todos os serviços e somente PDP**
    ```bash
    python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```

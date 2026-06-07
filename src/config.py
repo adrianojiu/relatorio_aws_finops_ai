@@ -64,6 +64,15 @@ SMS_COMPLEMENTARY_USAGE_TYPE_PATTERNS = [
     "OutboundSMS-BR-Standard-Sharedroute-MessageCount",
     "DeliveryAttempts-SMS",
 ]
+
+# UsageType report configuration
+USAGE_TYPE_REPORT_DEFAULT_WINDOW_DAYS = 30
+USAGE_TYPE_REPORT_MIN_TOTAL_USD = 5.0
+USAGE_TYPE_REPORT_MAX_RANGE_DAYS = 90
+USAGE_TYPE_REPORT_OUTPUT_SUBDIR = "usage_type_30d"
+USAGE_TYPE_CHART_MAX_USAGE_TYPES = 10  # Quantos UsageTypes mostrar nos gráficos de tendência.
+USAGE_TYPE_REPORT_FORECAST_DAYS = 30  # Quantos dias de projeção futura exibir no gráfico "Tendência futura".
+
 S3_MAX_COMPLEMENTARY_USAGE_TYPES = 5  # Quantos usage types pares do S3 enviar para ajudar a identificar mudanca de classe/tier.
 API_OPERATION_SERVICES = [
     "Amazon Simple Storage Service",

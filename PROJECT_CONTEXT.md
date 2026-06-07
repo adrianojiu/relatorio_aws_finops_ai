@@ -502,6 +502,7 @@ Importante:
 - Em caso de mudança de tier do S3 verificar sobre a mudança no CloudTrail para identificar informação de quem executou e outras pertinentes.
 - Houve stress test em `2026-05-20`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Houve stress test em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
+- Houve upgrade de instancias EC2 do Ping Directory, Primary, Secondary e Ternary, upgrade para melhorar performance da plataforma para a copa em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data, upgrade de r6i.4xlarge para r6i.8xlarge.
 
 ## Como evoluir o projeto sem perder coerencia
 
