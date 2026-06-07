@@ -303,12 +303,12 @@ class TestBuildUsageTypeVariationReport:
         row = result.iloc[0]
         assert row["Serviço"] == "Amazon S3"
         assert row["UsageType"] == "Storage"
-        assert round(row["Total 30d"], 2) == 25.0
+        assert round(row["Total período"], 2) == 25.0
         assert round(row["Participação %"], 1) == 100.0
         assert round(row["Média diária"], 2) == 8.33
         assert round(row["Último dia"], 2) == 15.0
-        assert round(row["Máximo 30d"], 2) == 15.0
-        assert round(row["Mínimo 30d"], 2) == 0.0
+        assert round(row["Máximo período"], 2) == 15.0
+        assert round(row["Mínimo período"], 2) == 0.0
         assert round(row["∆7d vs prev"], 2) == 8.33
         assert round(row["Variação US$"], 2) == 6.67
         assert round(row["Variação %"], 1) == 80.0
@@ -474,6 +474,66 @@ class TestBuildUsageTypeVariationReport:
             cost_analysis.build_usage_type_variation_report(
                 df, "2026-05-05", "2026-05-01", min_total_usd=5.0
             )
+
+    def test_allows_window_larger_than_ninety_days(self):
+        from analyzers import cost_analysis
+
+        df = pd.DataFrame({
+            "Data": ["2026-03-07", "2026-06-05"],
+            "Serviço": ["Amazon S3", "Amazon S3"],
+            "UsageType": ["Storage", "Storage"],
+            "Custo($)": [10.0, 20.0],
+        })
+
+        result = cost_analysis.build_usage_type_variation_report(
+            df, "2026-03-07", "2026-06-05", min_total_usd=0.0
+        )
+
+        assert len(result) == 1
+        assert round(result.iloc[0]["Total período"], 2) == 30.0
+
+    def test_builds_usage_type_analysis_payload(self):
+        from analyzers import cost_analysis
+
+        df_report = pd.DataFrame({
+            "UsageType": ["Storage", "Requests"],
+            "Serviço": ["Amazon S3", "Amazon S3"],
+            "Comportamento": ["Crescendo", "Volátil"],
+            "Total período": [120.0, 40.0],
+            "Participação %": [75.0, 25.0],
+            "Média diária": [4.0, 1.33],
+            "Último dia": [6.0, 0.8],
+            "Máximo período": [8.0, 3.0],
+            "Mínimo período": [1.0, 0.1],
+            "Desvio diário": [1.2, 0.9],
+            "CV": [0.3, 0.7],
+            "Média últimos 7 dias": [5.0, 1.0],
+            "Média anteriores": [3.5, 1.4],
+            "∆7d vs prev": [1.5, -0.4],
+            "Variação US$": [2.0, -0.5],
+            "Variação %": [50.0, -37.5],
+            "Impacto US$/dia": [0.4, -0.2],
+        })
+
+        payload = cost_analysis.build_usage_type_analysis_payload(
+            df_report=df_report,
+            start_date="2026-03-01",
+            end_date="2026-06-04",
+            min_total_usd=5.0,
+            top_anomalies=[{"date": "2026-06-04", "usage_type": "Storage"}],
+            weekly_pattern_data=[{"UsageType": "Storage (Amazon S3)", "values": [1, 2, 3, 4, 5, 6, 7]}],
+        )
+
+        assert payload["report_type"] == "usage_type"
+        assert payload["window"]["window_days"] == 96
+        assert payload["summary"]["usage_type_count"] == 2
+        assert payload["summary"]["total_period_usd"] == 160.0
+        assert payload["top_cost_drivers"][0]["UsageType"] == "Storage"
+        assert payload["fastest_growth"][0]["UsageType"] == "Storage"
+        assert payload["largest_declines"][0]["UsageType"] == "Requests"
+        assert payload["most_volatile"][0]["UsageType"] == "Requests"
+        assert payload["weekly_patterns"][0]["UsageType"] == "Storage (Amazon S3)"
+        assert payload["anomalies"][0]["date"] == "2026-06-04"
 
 
 # ---------------------------------------------------------------------------

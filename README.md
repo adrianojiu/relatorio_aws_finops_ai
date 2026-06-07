@@ -96,7 +96,7 @@ Para quem quer bater o olho e já executar sem ler tudo:
    python3 run.py --aws-profile prd-ciam --aws-region sa-east-1 --cost-explorer-region us-east-1 --bedrock-region us-east-1 --enable-bedrock --bedrock-model us.anthropic.claude-sonnet-4-6
    ```
 
-4. **Gerar o relatório de UsageType em janela customizada**
+4. **Gerar o relatório de UsageType em janela customizada, sem análise textual**
    ```bash
    python3 scripts/generate_usage_type_report.py \
      --aws-profile prd-ciam \
@@ -105,21 +105,42 @@ Para quem quer bater o olho e já executar sem ler tudo:
      --end-date 2026-06-21
    ```
 
-   O relatório será salvo em `output/usage_type_30d/2026-05-03_to_2026-06-21/` como TXT e HTML.
+   O relatório será salvo em `output/usage_type_report/2026-05-03_to_2026-06-21/` como TXT e HTML.
 
-5. **Gerar o relatório mensal com todos os serviços e somente PDP**
+   Nesse modo, o HTML mostra apenas a aba `Visão de custos`. A aba `Análise do relatório` permanece sem conteúdo textual.
+
+5. **Gerar o relatório de UsageType com análise textual do relatório**
+   ```bash
+   python3 scripts/generate_usage_type_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --bedrock-region us-east-1 \
+     --bedrock-model us.anthropic.claude-sonnet-4-6 \
+     --enable-bedrock \
+     --start-date 2026-05-03 \
+     --end-date 2026-06-21
+   ```
+
+   Esse modo:
+   - preenche a aba `Análise do relatório` no HTML
+   - adiciona a leitura textual ao final do TXT
+   - usa [`prompts/usage_type_analysis.txt`](./prompts/usage_type_analysis.txt) junto com o contexto de [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
+   - gera artefatos adicionais de análise em `*_analysis_payload.json`, `*_analysis_prompt.txt`, `*_analysis.txt` e `*_analysis_meta.json`
+
+6. **Gerar o relatório mensal com todos os serviços e somente PDP**
    ```bash
    python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```
 
-5. **Onde ajustar contexto e instruções**
+7. **Onde ajustar contexto e instruções**
    - contexto de negócio e operação: [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
    - instruções para agentes/IA: [`AGENTS.md`](./AGENTS.md)
    - prompt principal do relatório: [`prompts/finops_analysis.txt`](./prompts/finops_analysis.txt)
+   - prompt da análise textual do UsageType: [`prompts/usage_type_analysis.txt`](./prompts/usage_type_analysis.txt)
    - configuração técnica e métricas: [`src/config.py`](./src/config.py)
 
 
-6. **Arquivo de eventos Clarotv+**
+8. **Arquivo de eventos Clarotv+**
    - `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`
    - Antes de iniciar, o `run.py` pergunta se a planilha está atualizada:
      - Resposta `s` → continua normalmente
@@ -129,6 +150,50 @@ Para quem quer bater o olho e já executar sem ler tudo:
 
 
 Esse `Quickstart` é um atalho. Os detalhes completos continuam nas seções abaixo.
+
+## Relatório UsageType
+
+O script `scripts/generate_usage_type_report.py` suporta dois modos de execução:
+
+1. Sem análise textual
+   - gera TXT e HTML com visão numérica do período
+   - a aba `Análise do relatório` fica sem conteúdo textual
+
+   ```bash
+   python3 scripts/generate_usage_type_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --start-date 2026-05-03 \
+     --end-date 2026-06-21
+   ```
+
+2. Com análise textual do relatório
+   - usa Bedrock de forma opcional
+   - preenche a aba `Análise do relatório`
+   - adiciona a análise ao TXT
+
+   ```bash
+   python3 scripts/generate_usage_type_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --bedrock-region us-east-1 \
+     --bedrock-model us.anthropic.claude-sonnet-4-6 \
+     --enable-bedrock \
+     --start-date 2026-05-03 \
+     --end-date 2026-06-21
+   ```
+
+Artefatos gerados em `output/usage_type_report/<start>_to_<end>/`:
+- `relatorio_usagetype_<end>.txt`
+- `relatorio_usagetype_<end>.html`
+- `relatorio_usagetype_<end>_analysis_payload.json`
+- `relatorio_usagetype_<end>_analysis_prompt.txt`
+- `relatorio_usagetype_<end>_analysis.txt`
+- `relatorio_usagetype_<end>_analysis_meta.json`
+
+Fontes de contexto desse fluxo:
+- prompt de escrita: [`prompts/usage_type_analysis.txt`](./prompts/usage_type_analysis.txt)
+- contexto operacional: seção `Contexto para Bedrock` de [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
 
 ## 📁 Estrutura do Projeto
 

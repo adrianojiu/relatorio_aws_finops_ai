@@ -9,11 +9,12 @@ from botocore.config import Config as BotoConfig
 import config
 
 
-def _load_prompt_template():
+def _load_prompt_template(prompt_filename="finops_analysis.txt"):
+    """Carrega um template de prompt local para manter prompts por fluxo isolados."""
     prompt_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
         "prompts",
-        "finops_analysis.txt",
+        prompt_filename,
     )
     if not os.path.exists(prompt_file):
         return None
@@ -327,10 +328,18 @@ def analyze_with_bedrock(report_data, context_operational):
     if not config.ENABLE_BEDROCK:
         return None
 
+    prompt = build_bedrock_prompt(report_data, context_operational)
+    return analyze_prompt_with_bedrock(prompt)
+
+
+def analyze_prompt_with_bedrock(prompt):
+    """Invoca o modelo com um prompt já pronto, sem impor contrato de payload."""
+    if not config.ENABLE_BEDROCK:
+        return None
+
     session = boto3.Session(profile_name=config.AWS_PROFILE, region_name=config.BEDROCK_REGION)
     client_config = BotoConfig(connect_timeout=60, read_timeout=3600)
     bedrock = session.client("bedrock-runtime", config=client_config)
-    prompt = build_bedrock_prompt(report_data, context_operational)
     request_payload = _build_request_payload(config.BEDROCK_MODEL_ID, prompt)
 
     response = bedrock.invoke_model(

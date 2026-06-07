@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Generate an independent UsageType variation report over a custom date range.
-The output is written to output/usage_type_30d/<start_date>_to_<end_date>/.
+The output is written to output/usage_type_report/<start_date>_to_<end_date>/.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import date, datetime, timedelta
@@ -19,6 +20,7 @@ if str(SRC_ROOT) not in sys.path:
 import config
 from collectors import cost_explorer
 from analyzers import cost_analysis
+from integrations import bedrock
 from renderers import usage_type_report
 
 
@@ -66,7 +68,37 @@ def parse_args() -> argparse.Namespace:
         default=str(config.OUTPUT_DIR),
         help=f"Diretório base de saída. Padrão: {config.OUTPUT_DIR}",
     )
+    parser.add_argument(
+        "--enable-bedrock",
+        action="store_true",
+        help="Habilita a análise textual opcional do relatório.",
+    )
+    parser.add_argument(
+        "--bedrock-region",
+        default=config.BEDROCK_REGION,
+        help=f"Região do Bedrock. Padrão: {config.BEDROCK_REGION}",
+    )
+    parser.add_argument(
+        "--bedrock-model",
+        default=config.BEDROCK_MODEL_ID,
+        help=f"Modelo Bedrock. Padrão: {config.BEDROCK_MODEL_ID}",
+    )
     return parser.parse_args()
+
+
+def _load_usage_type_prompt() -> str:
+    """Carrega um prompt próprio para manter o fluxo de UsageType isolado."""
+    prompt_path = Path(__file__).resolve().parents[1] / "prompts" / "usage_type_analysis.txt"
+    return prompt_path.read_text(encoding="utf-8").strip()
+
+
+def _build_usage_type_analysis_prompt(report_payload: dict, context_operational: str) -> str:
+    """Monta o prompt final usado apenas pela análise textual deste relatório."""
+    return (
+        f"{_load_usage_type_prompt()}\n\n"
+        f"Contexto operacional consolidado:\n{context_operational}\n\n"
+        f"{json.dumps(report_payload, indent=2, ensure_ascii=False)}"
+    )
 
 
 def build_date_window(start_date: date | None, end_date: date | None) -> tuple[str, str]:
@@ -80,7 +112,11 @@ def build_date_window(start_date: date | None, end_date: date | None) -> tuple[s
         raise ValueError("start_date must be before or equal to end_date")
 
     days = (end_date - start_date).days + 1
-    if days > config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS:
+    # O limite é opcional porque o relatório foi projetado para janelas customizadas.
+    if (
+        config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS is not None
+        and days > config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS
+    ):
         raise ValueError(
             f"Date range cannot exceed {config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS} days"
         )
@@ -109,6 +145,9 @@ def main() -> None:
 
     config.AWS_PROFILE = args.aws_profile or None
     config.COST_EXPLORER_REGION = args.cost_explorer_region
+    config.BEDROCK_REGION = args.bedrock_region
+    config.BEDROCK_MODEL_ID = args.bedrock_model
+    config.ENABLE_BEDROCK = args.enable_bedrock
 
     df = cost_explorer.fetch_cost_drivers_from_cost_explorer(start_date, end_date)
     df_report = cost_analysis.build_usage_type_variation_report(
@@ -134,14 +173,51 @@ def main() -> None:
     # Padrão semanal de custo.
     weekly_labels, weekly_data = cost_analysis.build_weekly_pattern(df, start_date, end_date)
 
+    analysis_payload = cost_analysis.build_usage_type_analysis_payload(
+        df_report=df_report,
+        start_date=start_date,
+        end_date=end_date,
+        min_total_usd=args.min_total_usd,
+        top_anomalies=anomaly_data["top_anomalies"],
+        weekly_pattern_data=weekly_data,
+    )
+    analysis_prompt = _build_usage_type_analysis_prompt(
+        analysis_payload,
+        config.BEDROCK_CONTEXT,
+    )
+    analysis_text = None
+
+    analysis_payload_file = output_base / f"relatorio_usagetype_{end_date}_analysis_payload.json"
+    analysis_prompt_file = output_base / f"relatorio_usagetype_{end_date}_analysis_prompt.txt"
+    analysis_payload_file.write_text(
+        json.dumps(analysis_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    analysis_prompt_file.write_text(analysis_prompt, encoding="utf-8")
+
+    if config.ENABLE_BEDROCK:
+        print("Gerando análise textual do relatório...")
+        analysis_result = bedrock.analyze_prompt_with_bedrock(analysis_prompt)
+        analysis_text = (analysis_result or {}).get("text")
+        analysis_meta = (analysis_result or {}).get("metadata") or {}
+        (output_base / f"relatorio_usagetype_{end_date}_analysis.txt").write_text(
+            analysis_text or "",
+            encoding="utf-8",
+        )
+        (output_base / f"relatorio_usagetype_{end_date}_analysis_meta.json").write_text(
+            json.dumps(analysis_meta, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
     txt_file = usage_type_report.write_usage_type_txt_report(
-        str(output_base), start_date, end_date, df_report, args.min_total_usd
+        str(output_base), start_date, end_date, df_report, args.min_total_usd, analysis_text=analysis_text
     )
     html_file = usage_type_report.write_usage_type_html_report(
         str(output_base), start_date, end_date, df_report,
         report_labels, forecast_labels, usage_type_chart_data,
         total_daily_values, variation_chart_data, variation_pct_chart_data,
         anomaly_data["top_anomalies"], weekly_labels, weekly_data,
+        analysis_text=analysis_text,
     )
 
     print("Relatório de UsageType gerado com sucesso.")

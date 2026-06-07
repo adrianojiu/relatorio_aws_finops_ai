@@ -68,8 +68,9 @@ SMS_COMPLEMENTARY_USAGE_TYPE_PATTERNS = [
 # UsageType report configuration
 USAGE_TYPE_REPORT_DEFAULT_WINDOW_DAYS = 30
 USAGE_TYPE_REPORT_MIN_TOTAL_USD = 5.0
-USAGE_TYPE_REPORT_MAX_RANGE_DAYS = 90
-USAGE_TYPE_REPORT_OUTPUT_SUBDIR = "usage_type_30d"
+# None desabilita um teto artificial e deixa o proprio operador definir a janela.
+USAGE_TYPE_REPORT_MAX_RANGE_DAYS = None
+USAGE_TYPE_REPORT_OUTPUT_SUBDIR = "usage_type_report"
 USAGE_TYPE_CHART_MAX_USAGE_TYPES = 10  # Quantos UsageTypes mostrar nos gráficos de tendência.
 USAGE_TYPE_REPORT_FORECAST_DAYS = 30  # Quantos dias de projeção futura exibir no gráfico "Tendência futura".
 

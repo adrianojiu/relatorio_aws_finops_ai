@@ -9,6 +9,117 @@ import numpy as np
 import pandas as pd
 import config
 
+
+def _usage_type_report_columns():
+    """Mantém nomes de colunas estáveis e corretos para qualquer janela."""
+    return [
+        "UsageType",
+        "Serviço",
+        "Comportamento",
+        "Total período",
+        "Participação %",
+        "Média diária",
+        "Último dia",
+        "Máximo período",
+        "Mínimo período",
+        "Desvio diário",
+        "CV",
+        "Média últimos 7 dias",
+        "Média anteriores",
+        "∆7d vs prev",
+        "Variação US$",
+        "Variação %",
+        "Impacto US$/dia",
+    ]
+
+
+def build_usage_type_analysis_payload(
+    df_report,
+    start_date,
+    end_date,
+    min_total_usd,
+    top_anomalies=None,
+    weekly_pattern_data=None,
+):
+    """Resume o relatório de UsageType em um payload compacto para análise textual."""
+    window_days = (
+        datetime.strptime(end_date, "%Y-%m-%d").date()
+        - datetime.strptime(start_date, "%Y-%m-%d").date()
+    ).days + 1
+
+    if df_report is None or df_report.empty:
+        return {
+            "report_type": "usage_type",
+            "window": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "window_days": window_days,
+                "min_total_usd": float(min_total_usd),
+            },
+            "summary": {
+                "usage_type_count": 0,
+                "total_period_usd": 0.0,
+                "average_daily_usd": 0.0,
+            },
+            "top_cost_drivers": [],
+            "fastest_growth": [],
+            "largest_declines": [],
+            "most_volatile": [],
+            "weekly_patterns": [],
+            "anomalies": list(top_anomalies or []),
+        }
+
+    def _records(frame, columns, limit):
+        if frame.empty:
+            return []
+        return frame.loc[:, columns].head(limit).to_dict(orient="records")
+
+    top_cost_drivers = _records(
+        df_report.sort_values(["Participação %", "Total período"], ascending=[False, False]),
+        ["UsageType", "Serviço", "Total período", "Participação %", "Comportamento"],
+        10,
+    )
+    fastest_growth = _records(
+        df_report[df_report["Impacto US$/dia"] > 0].sort_values(
+            ["Impacto US$/dia", "Variação %"], ascending=[False, False]
+        ),
+        ["UsageType", "Serviço", "Impacto US$/dia", "Variação %", "Comportamento"],
+        10,
+    )
+    largest_declines = _records(
+        df_report[df_report["Impacto US$/dia"] < 0].sort_values(
+            ["Impacto US$/dia", "Variação %"], ascending=[True, True]
+        ),
+        ["UsageType", "Serviço", "Impacto US$/dia", "Variação %", "Comportamento"],
+        10,
+    )
+    most_volatile = _records(
+        df_report.sort_values(["CV", "Total período"], ascending=[False, False]),
+        ["UsageType", "Serviço", "CV", "Média diária", "Comportamento"],
+        10,
+    )
+
+    return {
+        "report_type": "usage_type",
+        "window": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "window_days": window_days,
+            "min_total_usd": float(min_total_usd),
+        },
+        "summary": {
+            "usage_type_count": int(len(df_report)),
+            "total_period_usd": round(float(df_report["Total período"].sum()), 4),
+            "average_daily_usd": round(float(df_report["Média diária"].sum()), 4),
+        },
+        "top_cost_drivers": top_cost_drivers,
+        "fastest_growth": fastest_growth,
+        "largest_declines": largest_declines,
+        "most_volatile": most_volatile,
+        "weekly_patterns": list((weekly_pattern_data or [])[:10]),
+        "anomalies": list((top_anomalies or [])[:20]),
+    }
+
 def build_daily_pivot(df):
     """
     Build pivoted DataFrame with services as columns
@@ -89,7 +200,11 @@ def build_usage_type_variation_report(
         raise ValueError("start_date must be before or equal to end_date")
 
     window_days = (end_dt - start_dt).days + 1
-    if window_days > config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS:
+    # Respeita um teto configurável apenas quando ele existir.
+    if (
+        config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS is not None
+        and window_days > config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS
+    ):
         raise ValueError(
             f"Date range cannot exceed {config.USAGE_TYPE_REPORT_MAX_RANGE_DAYS} days"
         )
@@ -98,25 +213,7 @@ def build_usage_type_variation_report(
     df_period["Data"] = pd.to_datetime(df_period["Data"], errors="coerce").dt.strftime("%Y-%m-%d")
     df_period = df_period[(df_period["Data"] >= start_date) & (df_period["Data"] <= end_date)].copy()
 
-    report_columns = [
-        "UsageType",
-        "Serviço",
-        "Comportamento",
-        "Total 30d",
-        "Participação %",
-        "Média diária",
-        "Último dia",
-        "Máximo 30d",
-        "Mínimo 30d",
-        "Desvio diário",
-        "CV",
-        "Média últimos 7 dias",
-        "Média anteriores",
-        "∆7d vs prev",
-        "Variação US$",
-        "Variação %",
-        "Impacto US$/dia",
-    ]
+    report_columns = _usage_type_report_columns()
 
     if df_period.empty:
         return pd.DataFrame(columns=report_columns)
@@ -181,12 +278,12 @@ def build_usage_type_variation_report(
             "UsageType": usage_type,
             "Serviço": service,
             "Comportamento": comportamento,
-            "Total 30d": round(total_cost, 4),
+            "Total período": round(total_cost, 4),
             "Participação %": round(share_pct, 2),
             "Média diária": round(average_daily, 4),
             "Último dia": round(last_day_cost, 4),
-            "Máximo 30d": round(max_30d, 4),
-            "Mínimo 30d": round(min_30d, 4),
+            "Máximo período": round(max_30d, 4),
+            "Mínimo período": round(min_30d, 4),
             "Desvio diário": round(std_daily, 4),
             "CV": round(cv, 4),
             "Média últimos 7 dias": round(avg_last_7_days, 4),
@@ -202,7 +299,7 @@ def build_usage_type_variation_report(
 
     result = pd.DataFrame(records)
     result = result.sort_values(
-        by=["Variação US$", "Variação %", "Total 30d"],
+        by=["Variação US$", "Variação %", "Total período"],
         ascending=[False, False, False],
     ).reset_index(drop=True)
     return result

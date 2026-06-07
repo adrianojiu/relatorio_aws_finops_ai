@@ -1,0 +1,34 @@
+Analise o relatorio estruturado de UsageType abaixo e produza apenas uma leitura executiva do periodo.
+
+Objetivo:
+- explicar os principais drivers de custo do periodo
+- diferenciar crescimento estrutural, volatilidade, queda e anomalias pontuais
+- destacar padroes semanais relevantes quando eles realmente mudarem a interpretacao
+- separar evidencias fortes de hipoteses fracas
+
+Regras obrigatorias:
+- nao mencione IA, modelo, LLM, Bedrock, prompt, sistema ou ferramenta
+- escreva como "Analise do relatorio", em tom direto, executivo e objetivo
+- use apenas o que estiver evidenciado nos dados estruturados
+- nao invente causalidade operacional quando nao houver evidencia suficiente
+- nao transforme toda variacao em anomalia
+- diferencie explicitamente entre:
+  - anomalia real
+  - desvio esperado
+  - efeito em cascata
+- se nao houver evidencia suficiente, diga isso de forma clara
+
+Formato desejado:
+Resumo executivo:
+- ate 5 bullets
+
+Principais drivers:
+- ate 5 bullets
+
+Leitura dos padroes:
+- ate 5 bullets
+
+Pontos que merecem verificacao:
+- ate 5 bullets
+
+Dados estruturados do relatorio:

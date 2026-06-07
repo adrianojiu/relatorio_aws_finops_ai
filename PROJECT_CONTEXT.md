@@ -41,6 +41,12 @@ Use `prompts/finops_analysis.txt` para:
 - limites de redacao
 - o que a resposta final deve ou nao afirmar
 
+Use `prompts/usage_type_analysis.txt` para:
+
+- instrucoes de escrita da analise textual do relatorio de UsageType
+- formato da aba `Analise do relatorio`
+- limites de redacao e foco executivo desse fluxo especifico
+
 Use `README.md` para:
 
 - comandos
@@ -104,6 +110,15 @@ Saidas principais:
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_bedrock_context.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_ai.txt`
 - `output/YYYY-MM-DD/relatorio_custos_YYYY-MM-DD_ai_meta.json`
+
+Saidas do relatorio de UsageType:
+
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>.txt`
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>.html`
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>_analysis_payload.json`
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>_analysis_prompt.txt`
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>_analysis.txt`
+- `output/usage_type_report/<start>_to_<end>/relatorio_usagetype_<end>_analysis_meta.json`
 
 ## Regioes AWS
 
@@ -178,6 +193,13 @@ Separacao atual:
 - `*_bedrock_prompt.txt`: prompt final gerado
 - `*_ai.txt`: resposta da IA
 - `*_ai_meta.json`: metadados da resposta
+
+No relatorio de UsageType:
+
+- sem `--enable-bedrock`: gera apenas a visao numerica e grafica
+- com `--enable-bedrock`: o HTML preenche a aba `Analise do relatorio` e o TXT inclui a leitura textual no final
+- a interface final desse fluxo nao deve citar IA, modelo ou Bedrock para o leitor do relatorio
+- o contexto textual usado nessa analise continua vindo da secao `Contexto para Bedrock` deste arquivo
 
 Essa separacao deve ser mantida.
 
@@ -500,6 +522,7 @@ Importante:
 - Eventos no Brasil como Black Friday, Dia das Maes, Natal, Copa do Mundo e Jogos Olimpicos tendem a aumentar a demanda e, consequentemente, a utilizacao dos recursos da plataforma.
 - Consultar usagetype e API operation do cost explorer para se aproximar da causa e dar uma resposta mais precisa sobre as anomalias, ou listar custo fora da curva.
 - Em caso de mudança de tier do S3 verificar sobre a mudança no CloudTrail para identificar informação de quem executou e outras pertinentes.
+- Aumento de EBS IOPS e Throughput provisionados antes do teste de stress de 2026-05-20, gargalo identificado no teste de abril para instancias ec2 do Ping Directory.
 - Houve stress test em `2026-05-20`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Houve stress test em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Houve upgrade de instancias EC2 do Ping Directory, Primary, Secondary e Ternary, upgrade para melhorar performance da plataforma para a copa em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data, upgrade de r6i.4xlarge para r6i.8xlarge.

@@ -1,6 +1,8 @@
 import html
 import json
 import os
+import re
+from datetime import datetime
 from typing import Optional
 
 import pandas as pd
@@ -10,9 +12,17 @@ def _format_currency(value: float) -> str:
     return f"US$ {value:,.2f}"
 
 
+def _calculate_window_days(start_date: str, end_date: str) -> int:
+    """Expõe a duração real do relatório para títulos e descrições."""
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    return (end_dt - start_dt).days + 1
+
+
 def _render_summary(start_date: str, end_date: str, min_total_usd: float, row_count: int) -> str:
+    window_days = _calculate_window_days(start_date, end_date)
     return (
-        f"Relatório UsageType 30 dias\n"
+        f"Relatório UsageType - {window_days} dias\n"
         f"Período: {start_date} até {end_date}\n"
         f"Filtro de custo mínimo no período: US$ {min_total_usd:.2f}\n"
         f"UsageType(s) analisado(s): {row_count}\n"
@@ -24,9 +34,133 @@ def _normalize_text(value: Optional[str]) -> str:
     return str(value or "").strip()
 
 
-def write_usage_type_txt_report(output_dir: str, start_date: str, end_date: str, df_report: pd.DataFrame, min_total_usd: float):
+def _format_inline_rich_text(text: str) -> str:
+    """Aplica formatação inline simples para evitar exibir markdown cru no HTML."""
+    escaped = html.escape(text)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    zscore_help = (
+        'z-score'
+        '<span class="ic inline-ic">i'
+        '<span class="tip">'
+        'Z-score mede o quanto um valor ficou distante da media normal daquele item. '
+        'Quanto maior o numero, mais fora do padrao ele esta. '
+        'Pense assim: perto de 0 = normal; acima de 2 = chama atencao; acima de 3 = bem fora do esperado.'
+        '</span></span>'
+    )
+    escaped = re.sub(r"\bz-scores\b", zscore_help + "s", escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r"\bz-score\b", zscore_help, escaped, flags=re.IGNORECASE)
+    return escaped
+
+
+def _render_analysis_html(analysis_text: Optional[str]) -> str:
+    """Transforma texto livre em blocos HTML sem expor a origem da análise."""
+    if not analysis_text or not analysis_text.strip():
+        return (
+            '<div class="analysis-shell">'
+            '<div class="analysis-hero">'
+            '<div>'
+            '<div class="analysis-eyebrow">Leitura executiva</div>'
+            '<h2>Análise do relatório</h2>'
+            '<p>Esta aba reúne a leitura textual do período quando ela for gerada na execução.</p>'
+            '</div>'
+            '<div class="analysis-pill analysis-pill-muted">Somente visão numérica</div>'
+            '</div>'
+            '<div class="section-card empty-state">'
+            '<p>Não disponível para esta execução.</p>'
+            '<p class="hint">A execução atual gerou apenas a visão numérica do relatório.</p>'
+            '</div>'
+            '</div>'
+        )
+
+    sections = []
+    preamble_blocks = []
+    current_title = "Resumo executivo"
+    current_blocks = []
+    current_list = []
+
+    def flush_list():
+        nonlocal current_list, current_blocks
+        if current_list:
+            items = "".join(f"<li>{_format_inline_rich_text(item)}</li>" for item in current_list)
+            current_blocks.append(f'<ul class="analysis-list">{items}</ul>')
+            current_list = []
+
+    def flush_section():
+        nonlocal current_title, current_blocks
+        flush_list()
+        if current_blocks:
+            sections.append(
+                '<article class="analysis-section-card">'
+                f'<div class="analysis-section-accent"></div>'
+                f'<h3>{_format_inline_rich_text(current_title)}</h3>'
+                + "".join(current_blocks)
+                + '</article>'
+            )
+            current_blocks = []
+
+    for raw_line in analysis_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_list()
+            continue
+        if line in {"---", "***"}:
+            flush_list()
+            continue
+        if line.startswith("# "):
+            preamble_blocks.append(
+                f'<div class="analysis-report-title">{_format_inline_rich_text(line[2:].strip())}</div>'
+            )
+            continue
+        if line.startswith("## "):
+            flush_section()
+            current_title = line[3:].strip()
+            continue
+        if line.startswith("- "):
+            current_list.append(line[2:].strip())
+            continue
+        flush_list()
+        if line.endswith(":") and len(line) <= 90:
+            flush_section()
+            current_title = line[:-1]
+        else:
+            current_blocks.append(f"<p>{_format_inline_rich_text(line)}</p>")
+
+    flush_section()
+
+    summary_text = (
+        "Leitura textual consolidada do período com foco em drivers de custo, "
+        "padrões recorrentes e pontos que merecem verificação."
+    )
+
+    return (
+        '<div class="analysis-shell">'
+        '<div class="analysis-hero">'
+        '<div>'
+        '<div class="analysis-eyebrow">Leitura executiva</div>'
+        '<h2>Análise do relatório</h2>'
+        f'<p>{html.escape(summary_text)}</p>'
+        '</div>'
+        '<div class="analysis-pill">Síntese interpretativa</div>'
+        '</div>'
+        + "".join(preamble_blocks)
+        + '<div class="analysis-grid">'
+        + "".join(sections)
+        + '</div>'
+        + '</div>'
+    )
+
+
+def write_usage_type_txt_report(
+    output_dir: str,
+    start_date: str,
+    end_date: str,
+    df_report: pd.DataFrame,
+    min_total_usd: float,
+    analysis_text: Optional[str] = None,
+):
     os.makedirs(output_dir, exist_ok=True)
-    output_txt = os.path.join(output_dir, f"relatorio_usagetype_30d_{end_date}.txt")
+    output_txt = os.path.join(output_dir, f"relatorio_usagetype_{end_date}.txt")
 
     header = _render_summary(start_date, end_date, min_total_usd, len(df_report))
     column_names = [
@@ -59,7 +193,7 @@ def write_usage_type_txt_report(output_dir: str, start_date: str, end_date: str,
         for _, row in df_report.sort_values("Participação %", ascending=False).head(10).iterrows():
             f.write(
                 f"- {row['UsageType']} | {row['Serviço']} | "
-                f"total 30d {row['Total 30d']:.2f} | "
+                f"total período {row['Total período']:.2f} | "
                 f"participação {row['Participação %']:.2f}%\n"
             )
         f.write("\n")
@@ -90,14 +224,18 @@ def write_usage_type_txt_report(output_dir: str, start_date: str, end_date: str,
             f.write(format_row([
                 _normalize_text(row["UsageType"]),
                 _normalize_text(row["Serviço"]),
-                f"{row['Total 30d']:.2f}",
+                f"{row['Total período']:.2f}",
                 f"{row['Participação %']:.2f}%",
                 f"{row['Média diária']:.2f}",
-                f"{row['Máximo 30d']:.2f}",
-                f"{row['Mínimo 30d']:.2f}",
+                f"{row['Máximo período']:.2f}",
+                f"{row['Mínimo período']:.2f}",
                 f"{row['Variação %']:.2f}%",
                 f"{row['Impacto US$/dia']:+.2f}",
             ]) + "\n")
+
+        if analysis_text and analysis_text.strip():
+            f.write("\n\nAnálise do relatório:\n\n")
+            f.write(analysis_text.strip() + "\n")
 
     print(f"Relatório TXT salvo em: {output_txt}")
     return output_txt
@@ -120,9 +258,10 @@ def write_usage_type_html_report(
     top_anomalies: list[dict] = None,
     weekly_pattern_labels: list[str] = None,
     weekly_pattern_data: list[dict] = None,
+    analysis_text: Optional[str] = None,
 ):
     os.makedirs(output_dir, exist_ok=True)
-    output_html = os.path.join(output_dir, f"relatorio_usagetype_30d_{end_date}.html")
+    output_html = os.path.join(output_dir, f"relatorio_usagetype_{end_date}.html")
 
     import config as _config  # importado localmente para não criar dependência circular
 
@@ -130,6 +269,7 @@ def write_usage_type_html_report(
     escaped_end = html.escape(end_date)
     total_count = len(df_report)
     forecast_days = _config.USAGE_TYPE_REPORT_FORECAST_DAYS
+    window_days = _calculate_window_days(start_date, end_date)
 
     # ── KPI cards ─────────────────────────────────────────────────────────────
     _badge_map = {
@@ -150,7 +290,7 @@ def write_usage_type_html_report(
 
     kpi_html = '<div class="kpi-row">'
     if not df_report.empty:
-        total_periodo = df_report["Total 30d"].sum()
+        total_periodo = df_report["Total período"].sum()
         avg_daily_total = df_report["Média diária"].sum()
         kpi_html += _kpi_card("Total período", f"US$ {total_periodo:,.2f}",
                                f"{total_count} UsageTypes · US$ {avg_daily_total:,.2f}/dia em média")
@@ -207,7 +347,7 @@ def write_usage_type_html_report(
     def _ath(label, tip):
         """Cabeçalho de coluna da tabela de anomalias com ícone de informação."""
         return (
-            f'<th>{label}'
+            f'<th class="sortable">{label}'
             f'<span class="ic">i<span class="tip">{tip}</span></span>'
             f'</th>'
         )
@@ -219,7 +359,7 @@ def write_usage_type_html_report(
             '<p class="chart-desc">Cada linha é um dia em que um UsageType se comportou de forma muito diferente do normal dele próprio — '
             'não do período inteiro, mas da média histórica daquele item específico. '
             'Ordenado pelo mais extremo primeiro.</p>'
-            '<div style="overflow-x:auto"><table class="anomaly-table"><thead><tr>'
+            '<div style="overflow-x:auto"><table id="anomalyTable" class="anomaly-table"><thead><tr>'
             + _ath("Data",
                    "Dia em que a anomalia foi detectada.")
             + _ath("UsageType",
@@ -257,11 +397,11 @@ def write_usage_type_html_report(
             f"<td>{html.escape(str(row['UsageType']))}</td>"
             f"<td>{html.escape(str(row['Serviço']))}</td>"
             f'<td><span class="badge {badge_cls}">{badge_label}</span></td>'
-            f"<td>{row['Total 30d']:.2f}</td>"
+            f"<td>{row['Total período']:.2f}</td>"
             f"<td>{row['Participação %']:.2f}%</td>"
             f"<td>{row['Média diária']:.2f}</td>"
-            f"<td>{row['Máximo 30d']:.2f}</td>"
-            f"<td>{row['Mínimo 30d']:.2f}</td>"
+            f"<td>{row['Máximo período']:.2f}</td>"
+            f"<td>{row['Mínimo período']:.2f}</td>"
             f"<td>{row['Variação %']:.2f}%</td>"
             f"<td>{row['Impacto US$/dia']:+.2f}</td>"
             "</tr>"
@@ -304,6 +444,7 @@ def write_usage_type_html_report(
     total_daily_values_json = json.dumps(total_daily_values)
     variation_chart_data_json = json.dumps(variation_chart_data)
     variation_pct_chart_data_json = json.dumps(variation_pct_chart_data)
+    analysis_tab_html = _render_analysis_html(analysis_text)
 
     html_content = fr"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -331,6 +472,14 @@ def write_usage_type_html_report(
     .chart-card h2 {{ margin-top: 0; font-size: 1rem; margin-bottom: 4px; }}
     .chart-desc {{ margin: 0 0 12px 0; font-size: 0.85rem; color: #718096; }}
     .chart-container {{ position: relative; min-height: 360px; }}
+    .tab-nav {{ display:flex; gap:10px; margin: 18px 0 24px; flex-wrap:wrap; }}
+    .tab-btn {{
+      padding: 10px 16px; border: 1px solid #cbd5e0; border-radius: 999px;
+      background: #f8fafc; color: #334155; font-weight: 600; cursor: pointer;
+    }}
+    .tab-btn.active {{ background: #2563eb; border-color: #2563eb; color: #fff; }}
+    .tab-pane {{ display:none; }}
+    .tab-pane.active {{ display:block; }}
     table {{ border-collapse: collapse; width: 100%; font-size: 0.9rem; }}
     th, td {{ border: 1px solid #cbd5e0; padding: 8px; text-align: left; }}
     th {{ background: #edf2f7; cursor: pointer; user-select: none; white-space: nowrap; }}
@@ -362,6 +511,85 @@ def write_usage_type_html_report(
     .badge-declining {{ background: #d1fae5; color: #065f46; }}
     .badge-volatile {{ background: #fef9c3; color: #92400e; }}
     .badge-stable   {{ background: #f1f5f9; color: #475569; }}
+    .analysis-shell {{ display:grid; gap: 20px; }}
+    .analysis-hero {{
+      display:flex; justify-content:space-between; align-items:flex-start; gap:18px;
+      padding: 28px 30px; border-radius: 20px;
+      background:
+        radial-gradient(circle at top right, rgba(191, 219, 254, 0.55), transparent 34%),
+        linear-gradient(135deg, #0f172a 0%, #16233b 42%, #f8fafc 42%, #ffffff 100%);
+      border: 1px solid #dbeafe;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    }}
+    .analysis-hero h2 {{ margin: 6px 0 10px; font-size: 1.35rem; color: #f8fafc; letter-spacing: -0.02em; }}
+    .analysis-hero p {{ margin: 0; max-width: 720px; line-height: 1.68; color: rgba(226, 232, 240, 0.92); }}
+    .analysis-eyebrow {{
+      display:inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #93c5fd;
+    }}
+    .analysis-pill {{
+      flex-shrink: 0; padding: 9px 14px; border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92); color: #0f172a; font-size: 0.78rem; font-weight: 700;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.28);
+    }}
+    .analysis-pill-muted {{
+      background: rgba(255, 255, 255, 0.86);
+      color: #334155;
+    }}
+    .analysis-report-title {{
+      padding: 14px 18px; border-left: 4px solid #1d4ed8; border-radius: 12px;
+      background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+      color: #0f172a; font-size: 1rem; font-weight: 700;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }}
+    .analysis-grid {{
+      display:grid; gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }}
+    .analysis-section-card {{
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 1) 24%);
+      border:1px solid #dbe4ee; border-radius:18px; padding:20px 20px 16px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }}
+    .analysis-section-accent {{
+      position:absolute; top:0; left:0; right:0; height:4px;
+      background: linear-gradient(90deg, #1d4ed8 0%, #60a5fa 55%, #bfdbfe 100%);
+    }}
+    .analysis-section-card h3 {{
+      margin: 4px 0 14px; color: #0f172a; font-size: 1.02rem;
+      padding-bottom: 12px; border-bottom: 1px solid #e2e8f0;
+      letter-spacing: -0.01em;
+    }}
+    .analysis-section-card p {{ margin: 0 0 12px; line-height: 1.7; color: #334155; }}
+    .analysis-list {{ margin: 0; padding-left: 0; list-style: none; color: #334155; }}
+    .analysis-list li {{
+      margin-bottom: 10px; line-height: 1.62; position: relative; padding-left: 18px;
+    }}
+    .analysis-list li::before {{
+      content: ""; position: absolute; left: 0; top: 10px;
+      width: 7px; height: 7px; border-radius: 999px; background: #2563eb;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+    }}
+    .analysis-section-card strong {{ color: #0f172a; font-weight: 700; }}
+    .analysis-section-card code {{
+      background: #eaf2ff; color: #1e3a8a; padding: 2px 6px; border-radius: 6px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.84em;
+    }}
+    .inline-ic {{
+      margin-left: 6px; width: 15px; height: 15px; font-size: 9px;
+      background: #cbd5e1; color: #0f172a; vertical-align: text-top;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35);
+    }}
+    .inline-ic .tip {{
+      width: 260px; background: #0f172a; color: #e2e8f0;
+      font-size: 12px; line-height: 1.5;
+    }}
+    .empty-state {{ text-align: center; padding: 48px 24px; }}
+    .empty-state .hint {{ color: #94a3b8; margin-top: 8px; }}
     /* ── Ícone de informação com tooltip ── */
     .ic {{
       display: inline-flex; align-items: center; justify-content: center;
@@ -384,61 +612,81 @@ def write_usage_type_html_report(
     }}
     .ic:hover .tip {{ visibility: visible; opacity: 1; }}
     .anomaly-table .ic:hover {{ z-index: 300; }}
+    @media (max-width: 720px) {{
+      body {{ margin: 16px; }}
+      .analysis-hero {{ flex-direction: column; }}
+      .analysis-pill {{ align-self: flex-start; }}
+      .analysis-hero {{
+        background:
+          radial-gradient(circle at top right, rgba(191, 219, 254, 0.45), transparent 28%),
+          linear-gradient(180deg, #0f172a 0%, #16233b 58%, #ffffff 58%, #ffffff 100%);
+      }}
+    }}
   </style>
 </head>
 <body>
   <h1>Relatório UsageType</h1>
   <div class="meta">Período: {escaped_start} até {escaped_end}</div>
+  <div class="meta">Janela analisada: {window_days} dias</div>
   <div class="meta">UsageTypes incluídos: {total_count}</div>
-  <div class="hint">Clique no cabeçalho de qualquer coluna para ordenar por maior/menor valor.</div>
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="overview">Visão de custos</button>
+    <button class="tab-btn" data-tab="analysis">Análise do relatório</button>
+  </nav>
 
-  {kpi_html}
+  <div id="tab-overview" class="tab-pane active">
+    <div class="hint">Clique no cabeçalho de qualquer coluna para ordenar por maior/menor valor.</div>
+    {kpi_html}
 
-  <div class="chart-controls">
-    <span>Visualização:</span>
-    <button class="ctrl-btn active" data-mode="line" onclick="setMode('line')">━ Linhas</button>
-    <button class="ctrl-btn" data-mode="bar" onclick="setMode('bar')">▐▐ Barras empilhadas</button>
+    <div class="chart-controls">
+      <span>Visualização:</span>
+      <button class="ctrl-btn active" data-mode="line" onclick="setMode('line')">━ Linhas</button>
+      <button class="ctrl-btn" data-mode="bar" onclick="setMode('bar')">▐▐ Barras empilhadas</button>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <h2>Uso diário — custo por UsageType (US$)</h2>
+        <p class="chart-desc">Custo diário em US$ por UsageType no período analisado. Identifica picos pontuais, sazonalidade e dias de maior gasto. A categoria "Others" agrega todos os UsageTypes fora do top 10.
+          <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;font-size:0.82rem;color:#c53030;font-weight:600;">
+            <svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#ef4444"/></svg>
+            Ponto vermelho = dia com anomalia detectada
+          </span>
+        </p>
+        <div class="chart-container">
+          <canvas id="dailyUsageChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h2>Tendência futura por UsageType — próximos {forecast_days} dias (US$)</h2>
+        <p class="chart-desc">Projeção linear de custo em US$ para os {forecast_days} dias após o fim do relatório, calculada com base em toda a janela do período. Referência de trajetória esperada — não é previsão definitiva.</p>
+        <div class="chart-container">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h2>Variação percentual diária por UsageType (%)</h2>
+        <p class="chart-desc">Variação percentual do custo de cada UsageType em relação ao dia anterior. Exibe os top 10 por maior "Impacto US$/dia" — os que mais crescem em termos financeiros reais. Detecta mudanças bruscas e outliers diários.</p>
+        <div class="chart-container">
+          <canvas id="variationPctChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h2>Padrão semanal — custo médio por dia da semana (US$)</h2>
+        <p class="chart-desc">Custo médio de cada UsageType por dia da semana ao longo do período. Revela sazonalidade semanal — ex: picos às segundas, quedas nos fins de semana. Ajuda a distinguir comportamento esperado de anomalia real.</p>
+        <div class="chart-container">
+          <canvas id="weeklyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    {anomaly_html}
+
+    {body_table}
   </div>
-
-  <div class="chart-row">
-    <div class="chart-card">
-      <h2>Uso diário — custo por UsageType (US$)</h2>
-      <p class="chart-desc">Custo diário em US$ por UsageType no período analisado. Identifica picos pontuais, sazonalidade e dias de maior gasto. A categoria "Others" agrega todos os UsageTypes fora do top 10.
-        <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;font-size:0.82rem;color:#c53030;font-weight:600;">
-          <svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#ef4444"/></svg>
-          Ponto vermelho = dia com anomalia detectada
-        </span>
-      </p>
-      <div class="chart-container">
-        <canvas id="dailyUsageChart"></canvas>
-      </div>
-    </div>
-    <div class="chart-card">
-      <h2>Tendência futura por UsageType — próximos {forecast_days} dias (US$)</h2>
-      <p class="chart-desc">Projeção linear de custo em US$ para os {forecast_days} dias após o fim do relatório, calculada com base em toda a janela do período. Referência de trajetória esperada — não é previsão definitiva.</p>
-      <div class="chart-container">
-        <canvas id="trendChart"></canvas>
-      </div>
-    </div>
-    <div class="chart-card">
-      <h2>Variação percentual diária por UsageType (%)</h2>
-      <p class="chart-desc">Variação percentual do custo de cada UsageType em relação ao dia anterior. Exibe os top 10 por maior "Impacto US$/dia" — os que mais crescem em termos financeiros reais. Detecta mudanças bruscas e outliers diários.</p>
-      <div class="chart-container">
-        <canvas id="variationPctChart"></canvas>
-      </div>
-    </div>
-    <div class="chart-card">
-      <h2>Padrão semanal — custo médio por dia da semana (US$)</h2>
-      <p class="chart-desc">Custo médio de cada UsageType por dia da semana ao longo do período. Revela sazonalidade semanal — ex: picos às segundas, quedas nos fins de semana. Ajuda a distinguir comportamento esperado de anomalia real.</p>
-      <div class="chart-container">
-        <canvas id="weeklyChart"></canvas>
-      </div>
-    </div>
+  <div id="tab-analysis" class="tab-pane">
+    {analysis_tab_html}
   </div>
-
-  {anomaly_html}
-
-  {body_table}
   <div class="note">Relatório gerado a partir de dados do Cost Explorer.</div>
 
   <script>
@@ -690,10 +938,19 @@ def write_usage_type_html_report(
     }}
 
     // ── Ordenação da tabela ──────────────────────────────────────────────────
-    const table = document.getElementById('usageTypeTable');
     const getCellValue = (row, idx) => {{
       const text = row.children[idx].textContent.trim();
-      const n = parseFloat(text.replace(/[\.\,\%\s]/g, '.'));
+      const dateMatch = text.match(/^(\d{{4}})-(\d{{2}})-(\d{{2}})$/);
+      if (dateMatch) return text;
+
+      const normalized = text
+        .replace(/^US\$\s*/, '')
+        .replace(/%/g, '')
+        .replace(/\+/g, '')
+        .replace(/\s/g, '')
+        .replace(/\.(?=\d{{3}}(\D|$))/g, '')
+        .replace(/,/g, '.');
+      const n = parseFloat(normalized);
       return Number.isFinite(n) && text.match(/[0-9]/) ? n : text.toLowerCase();
     }};
     const comparer = (idx, asc) => (a, b) => {{
@@ -701,16 +958,32 @@ def write_usage_type_html_report(
       const v2 = getCellValue(asc ? b : a, idx);
       return typeof v1 === 'number' && typeof v2 === 'number' ? v1 - v2 : v1.localeCompare(v2);
     }};
-    table.querySelectorAll('th.sortable').forEach(th => {{
-      th.addEventListener('click', () => {{
-        const tbody = table.tBodies[0];
-        const rows  = Array.from(tbody.querySelectorAll('tr'));
-        const col   = Number(th.dataset.column);
-        const asc   = !th.classList.contains('asc');
-        rows.sort(comparer(col, asc)).forEach(r => tbody.appendChild(r));
-        table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
-        th.classList.toggle('asc', asc);
-        th.classList.toggle('desc', !asc);
+    function wireSortableTable(table, explicitColumns = false) {{
+      if (!table) return;
+      table.querySelectorAll('th.sortable').forEach((th, index) => {{
+        th.addEventListener('click', () => {{
+          const tbody = table.tBodies[0];
+          const rows  = Array.from(tbody.querySelectorAll('tr'));
+          const col   = explicitColumns ? Number(th.dataset.column) : index;
+          const asc   = !th.classList.contains('asc');
+          rows.sort(comparer(col, asc)).forEach(r => tbody.appendChild(r));
+          table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
+          th.classList.toggle('asc', asc);
+          th.classList.toggle('desc', !asc);
+        }});
+      }});
+    }}
+
+    wireSortableTable(document.getElementById('usageTypeTable'), true);
+    wireSortableTable(document.getElementById('anomalyTable'));
+
+    // ── Navegação por abas ───────────────────────────────────────────────────
+    document.querySelectorAll('.tab-btn').forEach((button) => {{
+      button.addEventListener('click', () => {{
+        document.querySelectorAll('.tab-btn').forEach((item) => item.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        document.getElementById('tab-' + button.dataset.tab).classList.add('active');
       }});
     }});
 
