@@ -526,6 +526,7 @@ Importante:
 - Houve stress test em `2026-05-20`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Houve stress test em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data.
 - Houve upgrade de instancias EC2 do Ping Directory, Primary, Secondary e Ternary, upgrade para melhorar performance da plataforma para a copa em `2026-06-01`, entre `00:00` e `05:00` no horario `UTC-3`; esse contexto deve ser considerado ao interpretar custo e atividade dessa data, upgrade de r6i.4xlarge para r6i.8xlarge.
+- Em 11/06/2026 up-scaling de access, federate e PDP foi feito para o limite maximo para suportar evento copa do mundo de futebol 2026, até o fim da Copa do mundo de futebol devem ser feitos scalings para suportar jogos do evento, deve ser um periodo atipico com aumento de custos. A Copa do Mundo de 2026 ocorre de 11 de junho a 19 de julho de 2026.
 
 ## Como evoluir o projeto sem perder coerencia
 

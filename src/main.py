@@ -221,7 +221,10 @@ def _confirm_business_event_calendar_is_updated():
     if result.returncode != 0:
         raise RuntimeError(
             "Falha ao baixar a planilha do Google Drive. "
-            "Verifique client_secret.json e token.json na raiz do projeto."
+            "Verifique client_secret.json e token.json na raiz do projeto. "
+            "Se o token tiver expirado ou sido revogado, execute "
+            "'python3 scripts/setup_gdrive_auth.py --credentials ./client_secret.json' "
+            "para gerar um novo token.json."
         )
     print(f"{color_green}[calendar] Planilha atualizada com sucesso.{color_reset}")
 

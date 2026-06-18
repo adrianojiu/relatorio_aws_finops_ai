@@ -36,7 +36,7 @@ S3_REPORT_PREFIX_MONTHLY = os.getenv("FINOPS_S3_PREFIX_MONTHLY", "finops/relator
 # ============================================================
 
 # Janela consolidada usada nas comparacoes do relatorio e no payload para a IA.
-ANALYSIS_DAYS = 7  # Quantos dias entram na janela consolidada.
+ANALYSIS_DAYS = 15  # Quantos dias entram na janela consolidada.
 OFFSET_DAYS = 2    # Quantos dias voltar a partir de hoje para pegar o ultimo dia consolidado da AWS.
 REPORT_RETENTION_MONTHS = 13  # Meses de retenção de artefatos em output/ e export_monthly/ antes da limpeza automática.
 
@@ -73,6 +73,44 @@ USAGE_TYPE_REPORT_MAX_RANGE_DAYS = None
 USAGE_TYPE_REPORT_OUTPUT_SUBDIR = "usage_type_report"
 USAGE_TYPE_CHART_MAX_USAGE_TYPES = 10  # Quantos UsageTypes mostrar nos gráficos de tendência.
 USAGE_TYPE_REPORT_FORECAST_DAYS = 30  # Quantos dias de projeção futura exibir no gráfico "Tendência futura".
+
+# Period comparison report configuration
+PERIOD_COMPARISON_OUTPUT_SUBDIR = "period_comparison"
+PERIOD_COMPARISON_MIN_PCT_CHART_USD = 100.0  # Piso de custo para entrar nos gráficos de variação %.
+# Nomes curtos para exibição nos gráficos/tabelas do comparativo de períodos.
+# Nomes não mapeados aparecem como retornados pelo Cost Explorer.
+PERIOD_COMPARISON_SERVICE_SHORT_NAMES = {
+    "AWS Backup": "Backup",
+    "AWS Cost Explorer": "CostExplorer",
+    "AWS End User Messaging": "EndUser(SMS)",
+    "AWS Glue": "Glue",
+    "AWS Key Management Service": "KMS",
+    "AWS Lambda": "Lambda",
+    "AWS Secrets Manager": "Secrets",
+    "AWS Security Hub": "Sec Hub",
+    "AWS Step Functions": "Step Funct",
+    "AWS Systems Manager": "Sys Manager",
+    "AWS Transfer Family": "AWS Transfer",
+    "Amazon Athena": "Athena",
+    "Amazon DynamoDB": "DynamoDB",
+    "Amazon EC2 Container Registry (ECR)": "ECR",
+    "Amazon ElastiCache": "ElastiCache",
+    "Amazon Elastic Compute Cloud - Compute": "EC2-Inst",
+    "Amazon Elastic Container Service for Kubernetes": "EKS",
+    "Amazon Elastic Load Balancing": "ELB",
+    "Amazon GuardDuty": "GuardDuty",
+    "Amazon Kinesis Firehose": "Kinesis Fire",
+    "Amazon QuickSight": "QuickSight",
+    "Amazon Redshift": "Redshift",
+    "Amazon Route 53": "Route 53",
+    "Amazon Simple Notification Service": "SNS",
+    "Amazon Simple Queue Service": "SQS",
+    "Amazon Simple Storage Service": "S3",
+    "Amazon Virtual Private Cloud": "VPC",
+    "AmazonCloudWatch": "CloudWatch",
+    "EC2 - Other": "EC2-Other",
+    "Savings Plans for AWS Compute usage": "Savings Plans",
+}
 
 S3_MAX_COMPLEMENTARY_USAGE_TYPES = 5  # Quantos usage types pares do S3 enviar para ajudar a identificar mudanca de classe/tier.
 API_OPERATION_SERVICES = [

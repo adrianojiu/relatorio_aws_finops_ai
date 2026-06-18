@@ -132,7 +132,22 @@ Para quem quer bater o olho e já executar sem ler tudo:
    python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```
 
-7. **Onde ajustar contexto e instruções**
+7. **Gerar a análise mensal consolidada (correlação de eventos e anomalias recorrentes)**
+   Pré-requisito: os CSVs do passo anterior já devem existir em `export_monthly/`.
+   ```bash
+   python3 scripts/generate_monthly_analysis.py --month 2026-03 --aws-profile prd-ciam
+   ```
+
+8. **Gerar o relatório comparativo entre dois períodos de custo**
+   ```bash
+   python3 scripts/generate_period_comparison_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --period-a-start 2026-05-01 --period-a-end 2026-05-16 \
+     --period-b-start 2026-06-01 --period-b-end 2026-06-16
+   ```
+
+9. **Onde ajustar contexto e instruções**
    - contexto de negócio e operação: [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
    - instruções para agentes/IA: [`AGENTS.md`](./AGENTS.md)
    - prompt principal do relatório: [`prompts/finops_analysis.txt`](./prompts/finops_analysis.txt)
@@ -140,13 +155,13 @@ Para quem quer bater o olho e já executar sem ler tudo:
    - configuração técnica e métricas: [`src/config.py`](./src/config.py)
 
 
-8. **Arquivo de eventos Clarotv+**
-   - `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`
-   - Antes de iniciar, o `run.py` pergunta se a planilha está atualizada:
-     - Resposta `s` → continua normalmente
-     - Resposta `N` ou Enter → baixa automaticamente do Google Drive e continua (requer `client_secret.json` e `token.json` na raiz)
-   - Em automações (cron), use `--skip-calendar-confirmation` — o `cron_daily.sh` já faz o download antes de rodar
-   - Este arquivo é provido pelo time do Claro TV+ e está no Google Drive do mesmo time
+10. **Arquivo de eventos Clarotv+**
+    - `prompts/assets/Régua de Pushs_SMS Now Online.xlsx`
+    - Antes de iniciar, o `run.py` pergunta se a planilha está atualizada:
+      - Resposta `s` → continua normalmente
+      - Resposta `N` ou Enter → baixa automaticamente do Google Drive e continua (requer `client_secret.json` e `token.json` na raiz)
+    - Em automações (cron), use `--skip-calendar-confirmation` — o `cron_daily.sh` já faz o download antes de rodar
+    - Este arquivo é provido pelo time do Claro TV+ e está no Google Drive do mesmo time
 
 
 Esse `Quickstart` é um atalho. Os detalhes completos continuam nas seções abaixo.
@@ -195,6 +210,32 @@ Fontes de contexto desse fluxo:
 - prompt de escrita: [`prompts/usage_type_analysis.txt`](./prompts/usage_type_analysis.txt)
 - contexto operacional: seção `Contexto para Bedrock` de [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
 
+## Relatório comparativo entre dois períodos
+
+O script `scripts/generate_period_comparison_report.py` gera um único HTML interativo comparando o custo AWS entre dois períodos arbitrários (não precisam ter o mesmo número de dias), com abas "Por Serviço" e "Por Tipo de Uso", gráficos Chart.js e tabelas pesquisáveis/ordenáveis. Não usa Bedrock — é só visão numérica.
+
+```bash
+python3 scripts/generate_period_comparison_report.py \
+  --aws-profile prd-ciam \
+  --cost-explorer-region us-east-1 \
+  --period-a-start 2026-05-01 --period-a-end 2026-05-16 \
+  --period-b-start 2026-06-01 --period-b-end 2026-06-16
+```
+
+Datas sempre no formato `YYYY-MM-DD`.
+
+Artefato gerado:
+
+```file system
+output/period_comparison/<period_a_start>_<period_a_end>_vs_<period_b_start>_<period_b_end>/comparativo_<period_a_end>_vs_<period_b_end>.html
+```
+
+Exemplo, comparando 01–16 de maio vs 01–16 de junho de 2026:
+
+```file system
+output/period_comparison/2026-05-01_2026-05-16_vs_2026-06-01_2026-06-16/comparativo_2026-05-16_vs_2026-06-16.html
+```
+
 ## 📁 Estrutura do Projeto
 
 ```
@@ -211,6 +252,8 @@ relatorio-custo-aws/
 │   ├── cron_monthly.sh            # Wrapper para agendamento do relatório mensal
 │   ├── export_monthly_costs.py    # Exporta CSVs mensais e aciona análise mensal
 │   ├── generate_monthly_analysis.py  # Gera análise mensal consolidada
+│   ├── generate_usage_type_report.py # Relatório de UsageType em janela customizada
+│   ├── generate_period_comparison_report.py # Relatório HTML comparando dois períodos de custo
 │   ├── download_calendar.py       # Baixa a planilha de eventos do Google Drive (usado pelo cron)
 │   └── setup_gdrive_auth.py       # Autenticação OAuth2 Google — roda UMA VEZ localmente
 ├── src/                           # Código fonte modular
@@ -233,7 +276,10 @@ relatorio-custo-aws/
 │   ├── renderers/                 # Geração de relatórios
 │   │   ├── txt_report.py
 │   │   ├── excel_report.py
-│   │   └── pdf_report.py
+│   │   ├── pdf_report.py
+│   │   ├── html_report.py         # HTML interativo do relatório diário
+│   │   ├── usage_type_report.py   # TXT/HTML do relatório de UsageType
+│   │   └── period_comparison_report.py # HTML do comparativo entre dois períodos
 │   └── integrations/              # Integrações externas
 │       ├── bedrock.py             # Análise via AWS Bedrock
 │       └── notifier.py            # Upload S3 + notificação SNS
@@ -781,6 +827,14 @@ python3 scripts/download_calendar.py \
   --token       "./token.json"
 ```
 
+Se o download falhar com erro de `refresh token expirado`, `revogado` ou `invalid_grant`, gere um novo `token.json`:
+
+```bash
+python3 scripts/setup_gdrive_auth.py --credentials ./client_secret.json
+```
+
+Depois disso, rode novamente o `run.py` ou o `scripts/download_calendar.py`.
+
 #### Uso na EC2 (cron)
 
 Copie os dois arquivos de credenciais para a **raiz do projeto na EC2**:
@@ -791,6 +845,8 @@ scp token.json         ec2-user@<ip-da-ec2>:/caminho/do/projeto/
 ```
 
 O `cron_daily.sh` executa o download automaticamente antes de cada relatório — nenhuma configuração adicional é necessária além dos dois arquivos acima.
+
+Para automacoes de longa duracao, prefira `service_account.json` no `scripts/download_calendar.py`, porque esse modo nao depende de refresh token revogavel.
 
 ---
 
