@@ -2,13 +2,19 @@
 # Credenciais Google OAuth2 — nunca versionar
 client_secret.json
 token.json
+service_account.json
+# Configurações locais de agentes/IA
+.claude/
+.agents/
 
 # Pasta de relatorios e csv
 relatorios/
 relatorios_costexplorer/
 csv/
 output/
+temp/
 .continue/
+export_monthly/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

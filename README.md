@@ -96,7 +96,39 @@ Para quem quer bater o olho e já executar sem ler tudo:
    python3 run.py --aws-profile prd-ciam --aws-region sa-east-1 --cost-explorer-region us-east-1 --bedrock-region us-east-1 --enable-bedrock --bedrock-model us.anthropic.claude-sonnet-4-6
    ```
 
-4. **Gerar o relatório de UsageType em janela customizada, sem análise textual**
+4. **Gerar o relatório de otimização de custos (últimos 3 meses)**
+   ```bash
+   python3 scripts/generate_optimization_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --workload-region sa-east-1 \
+     --months 3
+   ```
+
+   Com análise textual via Bedrock:
+   ```bash
+   python3 scripts/generate_optimization_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --workload-region sa-east-1 \
+     --months 3 \
+     --enable-bedrock --bedrock-region us-east-1 \
+     --bedrock-model us.anthropic.claude-sonnet-4-6
+   ```
+
+   O relatório será salvo em `output/optimization_report/<start>_to_<end>/` como HTML, TXT e 3 CSVs.
+
+   Por padrão, o script coleta métricas reais de utilização (CPU de EC2, conexões de RDS, tráfego de ELB, volumes EBS não atachados e Elastic IPs ociosos) para fortalecer as oportunidades identificadas com evidência real. Para pular essa etapa (útil quando sem permissão ou para execução mais rápida):
+   ```bash
+   python3 scripts/generate_optimization_report.py \
+     --aws-profile prd-ciam \
+     --cost-explorer-region us-east-1 \
+     --workload-region sa-east-1 \
+     --months 3 \
+     --skip-utilization
+   ```
+
+5. **Gerar o relatório de UsageType em janela customizada, sem análise textual**
    ```bash
    python3 scripts/generate_usage_type_report.py \
      --aws-profile prd-ciam \
@@ -109,7 +141,7 @@ Para quem quer bater o olho e já executar sem ler tudo:
 
    Nesse modo, o HTML mostra apenas a aba `Visão de custos`. A aba `Análise do relatório` permanece sem conteúdo textual.
 
-5. **Gerar o relatório de UsageType com análise textual do relatório**
+6. **Gerar o relatório de UsageType com análise textual do relatório**
    ```bash
    python3 scripts/generate_usage_type_report.py \
      --aws-profile prd-ciam \
@@ -127,18 +159,23 @@ Para quem quer bater o olho e já executar sem ler tudo:
    - usa [`prompts/usage_type_analysis.txt`](./prompts/usage_type_analysis.txt) junto com o contexto de [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
    - gera artefatos adicionais de análise em `*_analysis_payload.json`, `*_analysis_prompt.txt`, `*_analysis.txt` e `*_analysis_meta.json`
 
-6. **Gerar o relatório mensal com todos os serviços e somente PDP**
+7. **Gerar o relatório mensal com todos os serviços e somente PDP**
    ```bash
-   python3 scripts/export_monthly_costs.py --month 2026-03 --aws-profile prd-ciam --cost-explorer-region us-east-1
+   python3 scripts/export_monthly_costs.py --month 2026-06 --aws-profile prd-ciam --cost-explorer-region us-east-1
    ```
 
-7. **Gerar a análise mensal consolidada (correlação de eventos e anomalias recorrentes)**
+8. **Gerar a análise mensal consolidada (correlação de eventos e anomalias recorrentes)**
    Pré-requisito: os CSVs do passo anterior já devem existir em `export_monthly/`.
    ```bash
    python3 scripts/generate_monthly_analysis.py --month 2026-03 --aws-profile prd-ciam
    ```
+  
+   ```bash
+  python3 scripts/generate_monthly_analysis.py --month 2026-06 --aws-profile prd-ciam \
+  --enable-bedrock --bedrock-region us-east-1 --bedrock-model us.anthropic.claude-sonnet-4-6
+   ```
 
-8. **Gerar o relatório comparativo entre dois períodos de custo**
+9. **Gerar o relatório comparativo entre dois períodos de custo**
    ```bash
    python3 scripts/generate_period_comparison_report.py \
      --aws-profile prd-ciam \
@@ -147,7 +184,7 @@ Para quem quer bater o olho e já executar sem ler tudo:
      --period-b-start 2026-06-01 --period-b-end 2026-06-16
    ```
 
-9. **Onde ajustar contexto e instruções**
+10. **Onde ajustar contexto e instruções**
    - contexto de negócio e operação: [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md)
    - instruções para agentes/IA: [`AGENTS.md`](./AGENTS.md)
    - prompt principal do relatório: [`prompts/finops_analysis.txt`](./prompts/finops_analysis.txt)
@@ -313,7 +350,7 @@ relatorio-custo-aws/
 
 ## 🛠️ Requisitos
 
-- Python 3.8+
+- Python 3.8+ (recomendado: 3.14+)
 - Credenciais AWS configuradas
 - Ambiente virtual recomendado: `.venv`
 - Dependências Python do projeto:
@@ -352,15 +389,35 @@ Observações:
 - se parte dessas permissões faltar, o relatório ainda pode rodar parcialmente, mas com menos contexto e menos precisão
 - para o script mensal de exportação PDP, o essencial é `ce:GetCostAndUsage`
 
+### Versão do Python e ambiente virtual
+
+O projeto requer Python 3.8+. Em servidores com múltiplas versões instaladas (ex: Amazon Linux com Python 3.7 padrão e Python 3.14 instalado manualmente), é necessário criar o virtualenv apontando explicitamente para a versão correta:
+
+```bash
+# Verificar qual binário usar
+python3.14 --version
+
+# Criar o virtualenv com a versão correta
+python3.14 -m venv .venv
+source .venv/bin/activate
+
+# Confirmar a versão ativa
+python --version  # deve mostrar 3.14.x
+
+pip install -r requirements.txt
+```
+
+Após ativar o `.venv`, todos os comandos `python` e `python3` dentro da sessão apontarão para a versão com que o virtualenv foi criado. O `cron_daily.sh` faz o `source .venv/bin/activate` automaticamente, então não é necessário nenhuma configuração adicional no cron.
+
 ## 🚀 Como Usar
 
 1. **Clonar e configurar ambiente:**
    ```bash
    git clone <repo>
    cd relatorio-custo-aws
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/Mac
-   # ou .venv\Scripts\Activate  # Windows
+   python3.14 -m venv .venv        # use a versão correta do seu ambiente
+   source .venv/bin/activate        # Linux/Mac
+   # ou .venv\Scripts\Activate      # Windows
    pip install -r requirements.txt
    ```
 

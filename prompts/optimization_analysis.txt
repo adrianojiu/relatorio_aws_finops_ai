@@ -1,0 +1,75 @@
+Analise o relatório estruturado de otimização de custos AWS abaixo e produza recomendações executivas priorizadas em dois blocos distintos.
+
+Objetivo:
+- identificar os principais vetores de crescimento de custo nos últimos 3 meses
+- validar se as oportunidades com evidência determinística fazem sentido no contexto operacional informado
+- para serviços sem regra mapeada, sugerir direção de investigação com base no UsageType e comportamento observado
+- diferenciar otimização segura (sem risco operacional) de otimização que requer validação cuidadosa
+- priorizar por impacto real estimado, não por volume de ações
+
+Regras obrigatórias:
+- não mencione IA, modelo, LLM, Bedrock, prompt, sistema ou ferramenta
+- escreva como "Análise de Otimização", em tom direto, executivo e orientado a ação
+- use apenas o que estiver evidenciado nos dados estruturados
+- não invente causalidade ou estimativas de economia sem base no payload
+- não transforme todo crescimento de custo em desperdício — crescimento pode ser justificado por demanda real
+- considere o contexto operacional: eventos de audiência, stress tests e upgrades já documentados podem explicar variações
+- diferencie explicitamente entre:
+  - economia segura e imediata (sem impacto operacional)
+  - economia que requer validação técnica (risco de performance ou disponibilidade)
+  - mudança estratégica (requer planejamento e commitment)
+- para recomendações de Savings Plans ou Reserved Instances, só sugira quando o comportamento for estável por pelo menos 2 meses
+- para rightsizing de EKS/EC2 do Ping Identity, sempre ressalve que a validação deve ocorrer fora de janelas de evento
+- não sugira Savings Plans se o custo estiver crescendo (padrão ainda não consolidado)
+
+---
+
+BLOCO 1 — Oportunidades com evidência determinística
+(campo: high_priority_opportunities + medium_priority_opportunities)
+
+Para cada oportunidade recebida:
+- confirme se a ação faz sentido dado o contexto operacional
+- ajuste a urgência se o contexto indicar risco (ex: evento Copa do Mundo, stress test programado)
+- sinalize se a economia estimada parece conservadora ou otimista dado o padrão observado
+- aponte dependências ou riscos que o dado não captura (ex: rightsize de instância PDP requer validação fora de janela de evento)
+
+Formato deste bloco:
+
+Visão executiva do período:
+- até 5 bullets com os principais achados (crescimento, queda, estabilidade, anomalias)
+
+Oportunidades de impacto imediato (sem risco operacional):
+- até 5 bullets com ação concreta, serviço e economia estimada
+
+Oportunidades que requerem validação:
+- até 5 bullets com ação, dependência e cuidado necessário
+
+Recomendações estratégicas (90+ dias):
+- até 3 bullets com iniciativas de médio prazo
+
+Riscos identificados:
+- até 3 bullets com o que pode estar crescendo sem justificativa clara
+
+---
+
+BLOCO 2 — Serviços para investigação (sem regra determinística)
+(campo: unclassified_services_for_investigation)
+
+Para cada serviço listado neste campo:
+- explique o que o UsageType observado significa operacionalmente
+- sugira o que pode estar causando o crescimento (hipótese, não certeza)
+- indique o que o time deve verificar para confirmar ou descartar a hipótese
+- NÃO estime economia — apenas direcione a investigação
+- se o crescimento tiver explicação óbvia pelo contexto operacional (ex: Copa do Mundo, upgrade de instâncias), diga isso claramente e classifique como "desvio esperado"
+
+Formato deste bloco:
+
+Serviços para investigação:
+- Para cada serviço: nome, comportamento observado, hipótese de causa, o que verificar
+- Use no máximo 4 linhas por serviço
+- Se a lista estiver vazia, omita este bloco completamente
+
+---
+
+Dados estruturados do relatório:
+

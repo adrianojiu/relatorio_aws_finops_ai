@@ -143,6 +143,48 @@ BUSINESS_EVENT_CALENDAR_FILE = os.path.join(
     "assets",
     "Régua de Pushs_SMS Now Online.xlsx",
 )
+# ============================================================
+# Optimization Report Configuration
+# Usado pelo script generate_optimization_report.py
+# ============================================================
+
+OPTIMIZATION_REPORT_OUTPUT_SUBDIR = "optimization_report"
+OPTIMIZATION_REPORT_DEFAULT_MONTHS = 3
+OPTIMIZATION_MIN_SERVICE_USD_3M = 10.0       # Custo mínimo acumulado no período para incluir o serviço
+OPTIMIZATION_HIGH_PRIORITY_SAVINGS_USD = 100  # Economia mensal mínima para classificar como Alta Prioridade
+OPTIMIZATION_MEDIUM_PRIORITY_SAVINGS_USD = 30 # Economia mensal mínima para classificar como Média Prioridade
+
+# Pontuação de facilidade de implementação por categoria (1=difícil, 10=fácil)
+# Reflete esforço operacional típico sem risco de downtime
+OPTIMIZATION_EFFORT_SCORES = {
+    "rightsizing": 5,
+    "lifecycle_s3": 7,
+    "log_retention": 8,
+    "vpc_endpoints": 6,
+    "savings_plans": 6,
+    "backup_retention": 8,
+    "quota_controls": 7,
+    "newer_generation": 5,
+    "autoscaling": 5,
+    "idle_cleanup": 9,
+    "data_compression": 4,
+}
+
+# Mapeamento de técnica Gartner por categoria de oportunidade
+OPTIMIZATION_GARTNER_TECHNIQUE = {
+    "rightsizing": "#2 — Rightsize under-utilized resources",
+    "newer_generation": "#5 — Newer generation instances",
+    "lifecycle_s3": "#14/#15 — Tiered storage strategy / Automate tier movement",
+    "log_retention": "#17/#21 — Review data retention / Reduce logging intensity",
+    "vpc_endpoints": "#35 — Use lower-cost network routes",
+    "savings_plans": "#38/#40 — Increase commitment / Improve commitment strategy",
+    "backup_retention": "#13/#16 — Review snapshot retention / Review backup techniques",
+    "quota_controls": "#24 — Introduce service quotas",
+    "autoscaling": "#6/#7 — Metric-based / Time-based auto-scaling",
+    "idle_cleanup": "#1 — Remove idle resources",
+    "data_compression": "#36 — Introduce data compression",
+}
+
 PDP_AUTOSCALING_GROUP_TAG_VALUES = [
     "eks-ping-pdp-20230707050838014700000007-2ac49760-29e5-0a4e-7825-19ff09a6422f",
     "eks-ping-pdp-2024081318350878980000002f-04c8a682-e18f-2d36-66fa-37635c476e77",

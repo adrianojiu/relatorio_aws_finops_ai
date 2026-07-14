@@ -31,7 +31,7 @@ class TestDefaultValues:
     def test_analysis_days_default(self):
         import config as cfg
 
-        assert cfg.ANALYSIS_DAYS == 7
+        assert cfg.ANALYSIS_DAYS == 15
 
     def test_offset_days_default(self):
         import config as cfg

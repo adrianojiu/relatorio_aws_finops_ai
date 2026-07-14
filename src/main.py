@@ -204,25 +204,33 @@ def _confirm_business_event_calendar_is_updated():
     print(f"{color_yellow}[calendar] Baixando planilha do Google Drive...{color_reset}")
     download_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "download_calendar.py")
     dest = "prompts/assets/Régua de Pushs_SMS Now Online.xlsx"
-    credentials = "./client_secret.json"
-    token = "./token.json"
 
     import subprocess
-    result = subprocess.run(
-        [
+
+    # Prefere service_account.json (não expira) quando disponível; cai para OAuth2 como fallback
+    if os.path.exists("./service_account.json"):
+        cmd = [
             sys.executable, download_script,
             "--file-id", gdrive_file_id,
             "--dest", dest,
-            "--credentials", credentials,
-            "--token", token,
-        ],
-        capture_output=False,
-    )
+            "--credentials", "./service_account.json",
+        ]
+    else:
+        cmd = [
+            sys.executable, download_script,
+            "--file-id", gdrive_file_id,
+            "--dest", dest,
+            "--credentials", "./client_secret.json",
+            "--token", "./token.json",
+        ]
+
+    result = subprocess.run(cmd, capture_output=False)
     if result.returncode != 0:
         raise RuntimeError(
             "Falha ao baixar a planilha do Google Drive. "
-            "Verifique client_secret.json e token.json na raiz do projeto. "
-            "Se o token tiver expirado ou sido revogado, execute "
+            "Para uso sem expiração, coloque service_account.json na raiz do projeto. "
+            "Para OAuth2, verifique client_secret.json e token.json na raiz do projeto. "
+            "Se o token OAuth2 tiver expirado, execute "
             "'python3 scripts/setup_gdrive_auth.py --credentials ./client_secret.json' "
             "para gerar um novo token.json."
         )

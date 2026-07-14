@@ -46,8 +46,11 @@ Use `PROJECT_CONTEXT.md` como fonte principal de contexto de negócio, operaçã
 - Sempre adicione comentarios no codigo para entendimento dos trechos.
 - Ao alterar funcoes publicas do modulo `src/analyzers/anomaly_detection.py`, atualize tambem os testes correspondentes em `tests/unit/analyzers/test_anomaly_detection.py`.
 - Testes unitarios estao em `tests/unit/` e devem ser executados com `pytest` antes de finalizar qualquer mudanca.
+- Rodas testes existentes sempre após qualquer alteração de codigo.
 - O renderer HTML esta em `src/renderers/html_report.py`; ao adicionar novos dados ao relatorio (nova secao, novo artefato ou nova metrica), atualize tambem o HTML para refletir a informacao nas abas correspondentes.
 
+## Regras de entendimento
+slope, CV, Z-score e outras expressões incomuns devem ser acompanhados de uma informação explicando o que é, as pessoas normalmente não sabem o que sõa estas epressões, pode ser um "i" explicando ou algo do tipo.
 ---
 
 ## Contexto do Projeto

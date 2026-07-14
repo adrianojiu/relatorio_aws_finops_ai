@@ -38,8 +38,8 @@ FINOPS_S3_PREFIX_DAILY="finops/relatorios/diario"
 
 # Google Drive — download da planilha de eventos antes do relatório
 GDRIVE_FILE_ID="1dS7E1dlskOqc1pXuBjpkQ7umfwAORAcj9BGkWCkZ5Gg"
-GDRIVE_CREDENTIALS="$PROJECT_DIR/client_secret.json"
-GDRIVE_TOKEN="$PROJECT_DIR/token.json"
+GDRIVE_CREDENTIALS="$PROJECT_DIR/service_account.json"
+GDRIVE_TOKEN=""
 
 # Flags
 ENABLE_BEDROCK=true
